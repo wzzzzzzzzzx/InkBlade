@@ -1,0 +1,11 @@
+{
+  "move": "WASD",
+  "jump": "Space",
+  "attackOrCharge": "Left Mouse",
+  "parry": "G",
+  "dodge": "Left Shift",
+  "skill": "F",
+  "ultimate": "V",
+  "menuConfirm": "Enter",
+  "menuBack": "Escape"
+}

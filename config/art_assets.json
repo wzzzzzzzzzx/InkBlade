@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "characters": {
+    "lingshuang": {
+      "displayKey": "character.lingshuang",
+      "concept": "assets/art/characters/lingshuang/concept/",
+      "body": "assets/art/characters/lingshuang/sprites/body/",
+      "vfx": "assets/art/characters/lingshuang/sprites/vfx/"
+    },
+    "mohen": {
+      "displayKey": "character.mohen",
+      "concept": "assets/art/characters/mohen/concept/",
+      "body": "assets/art/characters/mohen/sprites/body/",
+      "vfx": "assets/art/characters/mohen/sprites/vfx/"
+    },
+    "suxin": {
+      "displayKey": "character.suxin",
+      "concept": "assets/art/characters/suxin/concept/",
+      "body": "assets/art/characters/suxin/sprites/body/",
+      "vfx": "assets/art/characters/suxin/sprites/vfx/"
+    }
+  },
+  "weapons": {
+    "longsword": {
+      "displayKey": "weapon.longsword",
+      "concept": "assets/art/weapons/longsword/concept/",
+      "model": "assets/art/weapons/longsword/sprites/model/",
+      "attack": "assets/art/weapons/longsword/sprites/attack/"
+    },
+    "broadsword": {
+      "displayKey": "weapon.broadsword",
+      "concept": "assets/art/weapons/broadsword/concept/",
+      "model": "assets/art/weapons/broadsword/sprites/model/",
+      "attack": "assets/art/weapons/broadsword/sprites/attack/"
+    },
+    "dualblades": {
+      "displayKey": "weapon.dualblades",
+      "concept": "assets/art/weapons/dualblades/concept/",
+      "model": "assets/art/weapons/dualblades/sprites/model/",
+      "attack": "assets/art/weapons/dualblades/sprites/attack/"
+    }
+  },
+  "backgrounds": {
+    "bamboo_moon": {
+      "displayKey": "background.bamboo_moon",
+      "concept": "assets/art/backgrounds/bamboo_moon/concept/",
+      "layers": "assets/art/backgrounds/bamboo_moon/layers/"
+    }
+  }
+}
+

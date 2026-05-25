@@ -1,0 +1,49 @@
+{
+  "characters": [
+    {
+      "id": "lingshuang",
+      "name": "Ling Shuang",
+      "title": "Frost Duelist",
+      "hp": 900,
+      "attack": 1.15,
+      "speed": 260,
+      "staminaRegen": 15,
+      "energyGainHit": 1.25,
+      "energyGainTaken": 1.0,
+      "color": [115, 205, 255],
+      "passive": "All damage +15%",
+      "skill": "Frost Dash: dash forward and slow on hit",
+      "ultimate": "Ice Bloom Dance: five armored slashes"
+    },
+    {
+      "id": "mohen",
+      "name": "Mo Hen",
+      "title": "Ink Binder",
+      "hp": 1000,
+      "attack": 0.9,
+      "speed": 280,
+      "staminaRegen": 15,
+      "energyGainHit": 1.0,
+      "energyGainTaken": 1.0,
+      "color": [165, 105, 230],
+      "passive": "Skill cooldowns -20%",
+      "skill": "Ink Seal: bind the opponent briefly",
+      "ultimate": "Ink Net: disables dodging in a wide area"
+    },
+    {
+      "id": "suxin",
+      "name": "Su Xin",
+      "title": "Lotus Healer",
+      "hp": 1100,
+      "attack": 0.85,
+      "speed": 235,
+      "staminaRegen": 22,
+      "energyGainHit": 1.0,
+      "energyGainTaken": 1.5,
+      "color": [255, 145, 195],
+      "passive": "Recovers 5% of damage taken",
+      "skill": "Spring Heal: restore 20% max HP",
+      "ultimate": "Lotus Mercy: regeneration and 30% damage reduction"
+    }
+  ]
+}

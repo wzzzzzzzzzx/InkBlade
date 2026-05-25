@@ -1,0 +1,16 @@
+build/
+dist/
+tmp/
+.vs/
+.vscode/
+out/
+assets/art/review/**/staging_cutouts/
+assets/art/review/**/runtime_backup*/
+*.tmp
+*.bak
+*.user
+*.suo
+*.obj
+*.pdb
+*.ilk
+*.log
