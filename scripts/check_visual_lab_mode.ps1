@@ -18,6 +18,7 @@ foreach ($needle in @(
     "VisualLabAction::Charging",
     "VisualLabAction::Jump",
     "VisualLabAction::Parry",
+    "VisualLabAction::Dodge",
     "visualLabMode = true",
     "practiceEnemyAttacks = false"
 )) {
@@ -42,7 +43,8 @@ foreach ($needle in @(
     "visual_lab_normal.png",
     "visual_lab_charging.png",
     "visual_lab_jump.png",
-    "visual_lab_parry.png"
+    "visual_lab_parry.png",
+    "visual_lab_dodge.png"
 )) {
     if ($scriptText -notmatch $needle) {
         throw "Missing visual combat test script marker: $needle"

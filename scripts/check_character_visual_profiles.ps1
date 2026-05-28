@@ -115,7 +115,8 @@ foreach ($needle in @(
     "visual_lab_char{0}_normal.png",
     "visual_lab_char{0}_charging.png",
     "visual_lab_char{0}_jump.png",
-    "visual_lab_char{0}_parry.png"
+    "visual_lab_char{0}_parry.png",
+    "visual_lab_char{0}_dodge.png"
 )) {
     if ($VisualLabText -notmatch [regex]::Escape($needle)) {
         throw "Missing visual lab multi-character marker: $needle"

@@ -111,6 +111,7 @@ function Run-VisualLabCase([int]$characterIndex) {
         Capture-Action $hwnd 0x36 ("visual_lab_char{0}_charging.png" -f $characterIndex) 120
         Capture-Action $hwnd 0x37 ("visual_lab_char{0}_jump.png" -f $characterIndex) 90
         Capture-Action $hwnd 0x38 ("visual_lab_char{0}_parry.png" -f $characterIndex) 90
+        Capture-Action $hwnd 0x39 ("visual_lab_char{0}_dodge.png" -f $characterIndex) 90
 
         if ($characterIndex -eq 0) {
             Copy-LegacyChar0Shot 'visual_lab_char0_idle.png' 'visual_lab_idle.png'
@@ -123,6 +124,7 @@ function Run-VisualLabCase([int]$characterIndex) {
             Copy-LegacyChar0Shot 'visual_lab_char0_charging.png' 'visual_lab_charging.png'
             Copy-LegacyChar0Shot 'visual_lab_char0_jump.png' 'visual_lab_jump.png'
             Copy-LegacyChar0Shot 'visual_lab_char0_parry.png' 'visual_lab_parry.png'
+            Copy-LegacyChar0Shot 'visual_lab_char0_dodge.png' 'visual_lab_dodge.png'
         }
     } finally {
         if (-not $p.HasExited) {
@@ -153,7 +155,8 @@ $expected = @(
     'visual_lab_normal.png',
     'visual_lab_charging.png',
     'visual_lab_jump.png',
-    'visual_lab_parry.png'
+    'visual_lab_parry.png',
+    'visual_lab_dodge.png'
 )
 
 for ($characterIndex = 0; $characterIndex -lt 3; $characterIndex++) {
@@ -167,6 +170,7 @@ for ($characterIndex = 0; $characterIndex -lt 3; $characterIndex++) {
     $expected += "visual_lab_char${characterIndex}_charging.png"
     $expected += "visual_lab_char${characterIndex}_jump.png"
     $expected += "visual_lab_char${characterIndex}_parry.png"
+    $expected += "visual_lab_char${characterIndex}_dodge.png"
 }
 
 foreach ($name in $expected) {

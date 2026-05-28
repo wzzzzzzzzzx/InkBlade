@@ -88,9 +88,14 @@ original 2D side-view wuxia fighting game character sprite, flat #00ff00 or #ff0
 Run:
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\check_suxin_death_resolution.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\check_character_visual_profiles.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\check_character_battle_art_spec.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\check_visual_lab_mode.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\package.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\visual_combat_test.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\smoke_interaction.ps1
 ```
 
 Review:
@@ -100,3 +105,11 @@ build/visual-lab/visual_lab_char0_idle.png
 build/visual-lab/visual_lab_char1_idle.png
 build/visual-lab/visual_lab_char2_idle.png
 ```
+
+Before accepting a replacement body sprite, inspect the matching visual-lab screenshot at combat scale:
+
+- Feet, hat, hair, sleeves, ribbons, and weapon silhouettes must not be cropped.
+- Idle feet must have a small transparent bottom margin so the character does not look cut off on the ground.
+- Character scale must stay consistent across idle, run, dodge, parry, hit, skill, and ultimate.
+- Skill props such as SuXin's lotus must not have hollow alpha holes unless they are intentional VFX shapes.
+- Large aura, ink, ice, lotus, or wind effects should be split into `sprites/vfx/` instead of baked into every body sprite.

@@ -90,7 +90,7 @@ const std::array<Weapon, 3> Weapons = {{
 enum class Screen { Main, Character, Weapon, Difficulty, Practice, Battle, Result };
 enum class Action { Idle, Normal, Charging, ChargeRelease, Parry, Counter, Dodge, Skill, Ultimate, Hit, Down };
 enum class Difficulty { Easy, Normal, Hard };
-enum class VisualLabAction { Ultimate, ChargeRelease, Hit, Skill, Normal, Charging, Jump, Parry };
+enum class VisualLabAction { Ultimate, ChargeRelease, Hit, Skill, Normal, Charging, Jump, Parry, Dodge };
 enum class ActionSpriteSlot {
     Idle,
     Run1,
@@ -291,6 +291,10 @@ public:
                 }
                 if (key == '8') {
                     triggerVisualLabAction(VisualLabAction::Parry);
+                    return;
+                }
+                if (key == '9') {
+                    triggerVisualLabAction(VisualLabAction::Dodge);
                     return;
                 }
             }
@@ -519,6 +523,31 @@ private:
                 layout.width = std::max(130, std::min(layout.width, refinedActionPose ? 520 : 320));
                 layout.xOffset = 0;
                 layout.yOffset = refinedActionPose ? 58 : 48;
+            }
+        }
+        if (role == 1 && image.width > 0 && image.height > 0) {
+            const float aspect = static_cast<float>(image.width) / static_cast<float>(image.height);
+            auto setHeightPreservingAspect = [&](int targetHeight, int minWidth, int maxWidth, int yOffset) {
+                layout.height = targetHeight;
+                layout.width = static_cast<int>(layout.height * aspect);
+                layout.width = std::max(minWidth, std::min(layout.width, maxWidth));
+                layout.yOffset = yOffset;
+                layout.xOffset = 0;
+            };
+            if (slot == ActionSpriteSlot::Run1 || slot == ActionSpriteSlot::Run2) {
+                setHeightPreservingAspect(240, 156, 230, 52);
+            } else if (slot == ActionSpriteSlot::Dodge) {
+                setHeightPreservingAspect(240, 156, 230, 52);
+            } else if (slot == ActionSpriteSlot::Parry || slot == ActionSpriteSlot::Normal) {
+                setHeightPreservingAspect(246, 235, 318, 50);
+            } else if (slot == ActionSpriteSlot::Skill) {
+                setHeightPreservingAspect(206, 165, 235, 46);
+            } else if (
+                slot == ActionSpriteSlot::Charging ||
+                slot == ActionSpriteSlot::ChargeRelease) {
+                setHeightPreservingAspect(218, 170, 250, 48);
+            } else if (slot == ActionSpriteSlot::Ultimate) {
+                setHeightPreservingAspect(224, 210, 285, 50);
             }
         }
         return layout;
@@ -903,6 +932,13 @@ private:
             addEffect(EffectType::ParryGuard, player.p, RGB(245, 245, 235), 0.24f, 80.f, player.facing, 0);
             message = L"\u632f\u5200\u6d4b\u8bd5";
             messageTimer = 0.8f;
+        } else if (action == VisualLabAction::Dodge) {
+            player.action = Action::Dodge;
+            player.actionTimer = 0.28f;
+            player.facing = player.lastMoveFacing;
+            addEffect(EffectType::DodgeTrail, player.p, player.c.color, 0.28f, 76.f, player.facing, 0);
+            message = L"\u51b2\u523a\u6d4b\u8bd5";
+            messageTimer = 0.8f;
         }
     }
 
@@ -951,12 +987,51 @@ private:
         if (practiceMode && practiceEnemyFullEnergy) ai.energy = 100.f;
         resolve(player, ai);
         resolve(ai, player);
+        finishBattleIfOver();
+    }
+
+    void finishBattleIfOver() {
         if (!practiceMode && (player.hp <= 0.f || ai.hp <= 0.f || timeLeft <= 0.f)) {
             win = player.hp >= ai.hp;
             screen = Screen::Result;
         }
     }
 
+public:
+    bool runDeathSelfTest() {
+        // Suxin's passive may heal non-lethal hits, but it must not revive her from a lethal hit.
+        practiceMode = false;
+        charSel = 2;
+        weaponSel = 0;
+        resetBattle();
+        screen = Screen::Battle;
+        player.hp = 30.f;
+        ai.p = {player.p.x - 80.f, player.p.y};
+        ai.facing = 1;
+        ai.action = Action::Ultimate;
+        ai.actionTimer = 0.75f;
+        resolve(ai, player);
+        finishBattleIfOver();
+        const bool suxinPlayerDies = player.hp <= 0.f && screen == Screen::Result && !win;
+
+        charSel = 1;
+        weaponSel = 0;
+        resetBattle();
+        screen = Screen::Battle;
+        ai.hp = 30.f;
+        player.p = {ai.p.x - 80.f, ai.p.y};
+        player.facing = 1;
+        player.action = Action::Normal;
+        player.actionTimer = 0.35f;
+        player.comboIndex = 1;
+        resolve(player, ai);
+        finishBattleIfOver();
+        const bool suxinEnemyDies = ai.hp <= 0.f && screen == Screen::Result && win;
+
+        return suxinPlayerDies && suxinEnemyDies;
+    }
+
+private:
     bool freeToAct(const Fighter& f) const {
         return f.action == Action::Idle || f.action == Action::Dodge;
     }
@@ -1143,11 +1218,13 @@ private:
 
         float damage = BaseDamage * mult * a.c.attack;
         if (d.lotusTimer > 0.f) damage *= 0.7f;
+        const float hpBeforeDamage = d.hp;
         d.hp = clampf(d.hp - damage, 0.f, d.c.hp);
+        const bool defeatedByThisHit = hpBeforeDamage > 0.f && d.hp <= 0.f;
         a.damageDone += damage;
         a.energy = clampf(a.energy + 8.f * a.c.hitEnergy, 0.f, 100.f);
         d.energy = clampf(d.energy + 5.f * d.c.takenEnergy, 0.f, 100.f);
-        if (d.c.name == Characters[2].name) d.hp = clampf(d.hp + damage * 0.05f, 0.f, d.c.hp);
+        if (!defeatedByThisHit && d.c.name == Characters[2].name) d.hp = clampf(d.hp + damage * 0.05f, 0.f, d.c.hp);
         d.hitTimer = 0.25f;
         d.action = Action::Hit;
         d.actionTimer = 0.25f;
@@ -2004,6 +2081,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
+    if (std::wstring(GetCommandLineW()).find(L"--self-test-death") != std::wstring::npos) {
+        return g.runDeathSelfTest() ? 0 : 2;
+    }
+
     WNDCLASSW wc{};
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInstance;
