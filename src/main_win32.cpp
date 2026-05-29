@@ -326,8 +326,7 @@ public:
         }
         if (screen == Screen::Result) {
             if (key == VK_RETURN) {
-                resetBattle();
-                screen = Screen::Battle;
+                continueAfterResult();
             }
             if (key == VK_ESCAPE) {
                 screen = Screen::Main;
@@ -381,8 +380,7 @@ public:
         if (screen == Screen::Result) {
             if (!down) {
                 if (inside(x, y, 420, 520, 200, 52)) {
-                    resetBattle();
-                    screen = Screen::Battle;
+                    continueAfterResult();
                 } else if (inside(x, y, 660, 520, 200, 52)) {
                     screen = Screen::Main;
                     menu = 0;
@@ -476,6 +474,11 @@ private:
     bool practiceFullEnergy = true;
     bool practiceEnemyFullEnergy = false;
     bool win = false;
+    bool roundWin = false;
+    bool matchComplete = false;
+    int playerRounds = 0;
+    int aiRounds = 0;
+    int currentRound = 1;
     std::wstring message;
     float messageTimer = 0.f;
     float hitStopTimer = 0.f;
@@ -826,10 +829,7 @@ private:
             diffSel = menu;
             difficulty = static_cast<Difficulty>(diffSel);
             practiceMode = false;
-            resetBattle();
-            screen = Screen::Battle;
-            mouseDown = false;
-            lastMouse = false;
+            startNewMatch();
         } else if (screen == Screen::Practice) {
             if (menu == 0) {
                 practiceEnemyAttacks = !practiceEnemyAttacks;
@@ -888,6 +888,35 @@ private:
         shakeTimer = 0.f;
         shakeStrength = 0.f;
         koFeedbackPlayed = false;
+    }
+
+    void resetMatchState() {
+        playerRounds = 0;
+        aiRounds = 0;
+        currentRound = 1;
+        matchComplete = false;
+        roundWin = false;
+        win = false;
+    }
+
+    void startNewMatch() {
+        resetMatchState();
+        resetBattle();
+        screen = Screen::Battle;
+        mouseDown = false;
+        lastMouse = false;
+    }
+
+    void continueAfterResult() {
+        if (matchComplete) {
+            startNewMatch();
+            return;
+        }
+        ++currentRound;
+        resetBattle();
+        screen = Screen::Battle;
+        mouseDown = false;
+        lastMouse = false;
     }
 
     void startVisualLab() {
@@ -1053,7 +1082,14 @@ private:
 
     void finishBattleIfOver() {
         if (!practiceMode && (player.hp <= 0.f || ai.hp <= 0.f || timeLeft <= 0.f)) {
-            win = player.hp >= ai.hp;
+            roundWin = player.hp >= ai.hp;
+            if (roundWin) {
+                ++playerRounds;
+            } else {
+                ++aiRounds;
+            }
+            matchComplete = playerRounds >= 2 || aiRounds >= 2;
+            win = matchComplete ? playerRounds > aiRounds : roundWin;
             triggerKoFeedback();
             screen = Screen::Result;
         }
@@ -1062,6 +1098,7 @@ private:
 public:
     bool runDeathSelfTest() {
         // Suxin's passive may heal non-lethal hits, but it must not revive her from a lethal hit.
+        resetMatchState();
         practiceMode = false;
         charSel = 2;
         weaponSel = 0;
@@ -1091,6 +1128,53 @@ public:
         const bool suxinEnemyDies = ai.hp <= 0.f && screen == Screen::Result && win;
 
         return suxinPlayerDies && suxinEnemyDies;
+    }
+
+    bool runMatchFlowSelfTest() {
+        practiceMode = false;
+        charSel = 0;
+        weaponSel = 0;
+        diffSel = 0;
+        difficulty = Difficulty::Easy;
+        startNewMatch();
+
+        ai.hp = 0.f;
+        finishBattleIfOver();
+        const bool firstRound =
+            screen == Screen::Result &&
+            roundWin &&
+            !matchComplete &&
+            playerRounds == 1 &&
+            aiRounds == 0 &&
+            currentRound == 1;
+
+        continueAfterResult();
+        const bool secondRoundReady =
+            screen == Screen::Battle &&
+            !matchComplete &&
+            playerRounds == 1 &&
+            aiRounds == 0 &&
+            currentRound == 2;
+
+        ai.hp = 0.f;
+        finishBattleIfOver();
+        const bool matchWon =
+            screen == Screen::Result &&
+            matchComplete &&
+            win &&
+            playerRounds == 2 &&
+            aiRounds == 0 &&
+            currentRound == 2;
+
+        continueAfterResult();
+        const bool restarted =
+            screen == Screen::Battle &&
+            !matchComplete &&
+            playerRounds == 0 &&
+            aiRounds == 0 &&
+            currentRound == 1;
+
+        return firstRound && secondRoundReady && matchWon && restarted;
     }
 
 private:
@@ -1383,7 +1467,11 @@ private:
         splash({p.x, p.y - 70.f}, RGB(245, 235, 210), 52);
         addEffect(EffectType::HitBurst, {p.x, p.y - 44.f}, RGB(245, 235, 210), 0.62f, 150.f, 1, 2);
         addFloatingText({W * 0.5f, 230.f}, L"KO", RGB(245, 235, 210), 72);
-        message = win ? L"\u80dc\u5229" : L"\u6218\u8d25";
+        if (matchComplete) {
+            message = win ? L"\u80dc\u5229" : L"\u6218\u8d25";
+        } else {
+            message = roundWin ? L"\u672c\u5c40\u80dc\u5229" : L"\u672c\u5c40\u5931\u5229";
+        }
         messageTimer = 1.4f;
         addHitStop(0.22f, 16.f);
     }
@@ -2127,6 +2215,10 @@ private:
         bar(hdc, W - 324, 76, 300, 10, ai.energy / 100.f, RGB(70, 145, 230));
         bar(hdc, W - 324, 92, 300, 10, ai.stamina / 100.f, RGB(220, 180, 70));
         text(hdc, std::to_wstring(static_cast<int>(std::ceil(std::max(0.f, timeLeft)))), 0, 26, 34, RGB(235, 230, 215), true);
+        if (!practiceMode) {
+            text(hdc, L"\u7b2c " + std::to_wstring(currentRound) + L" \u5c40", 0, 66, 20, RGB(232, 224, 205), true);
+            text(hdc, std::to_wstring(playerRounds) + L" : " + std::to_wstring(aiRounds), 0, 92, 22, RGB(232, 224, 205), true);
+        }
         if (messageTimer > 0.f) text(hdc, message, 0, 145, 48, RGB(245, 245, 235), true);
         drawBattleTips(hdc);
     }
@@ -2208,17 +2300,21 @@ private:
 
     void drawResult(HDC hdc) {
         rect(hdc, 0, 0, W, H, RGB(5, 5, 5));
-        text(hdc, win ? L"胜 利" : L"失 败", 0, 170, 64, win ? RGB(235, 230, 205) : RGB(215, 80, 80), true);
-        text(hdc, L"Enter：再来一局    Esc：返回菜单", 0, 250, 24, RGB(230, 226, 210), true);
-        text(hdc, L"总伤害：" + std::to_wstring(static_cast<int>(player.damageDone)), 500, 330, 22, RGB(235, 230, 220));
-        text(hdc, L"振刀成功：" + std::to_wstring(player.parries), 500, 365, 22, RGB(235, 230, 220));
-        text(hdc, L"最大连招：" + std::to_wstring(player.maxCombo), 500, 400, 22, RGB(235, 230, 220));
-        text(hdc, L"蓄力命中：" + std::to_wstring(player.chargeHits), 500, 435, 22, RGB(235, 230, 220));
-        text(hdc, L"闪避次数：" + std::to_wstring(player.dodges), 500, 470, 22, RGB(235, 230, 220));
+        const bool titleWin = matchComplete ? win : roundWin;
+        const std::wstring title = matchComplete ? (win ? L"\u80dc \u5229" : L"\u5931 \u8d25") : (roundWin ? L"\u672c\u5c40\u80dc\u5229" : L"\u672c\u5c40\u5931\u5229");
+        const std::wstring nextLabel = matchComplete ? L"\u91cd\u65b0\u5f00\u59cb" : L"\u4e0b\u4e00\u5c40";
+        text(hdc, title, 0, 150, 58, titleWin ? RGB(235, 230, 205) : RGB(215, 80, 80), true);
+        text(hdc, L"\u6bd4\u5206  " + std::to_wstring(playerRounds) + L" : " + std::to_wstring(aiRounds) + L"    \u7b2c " + std::to_wstring(currentRound) + L" \u5c40", 0, 222, 26, RGB(230, 226, 210), true);
+        text(hdc, matchComplete ? L"Enter\uff1a\u91cd\u65b0\u5f00\u59cb    Esc\uff1a\u8fd4\u56de\u83dc\u5355" : L"Enter\uff1a\u4e0b\u4e00\u5c40    Esc\uff1a\u8fd4\u56de\u83dc\u5355", 0, 260, 22, RGB(230, 226, 210), true);
+        text(hdc, L"\u603b\u4f24\u5bb3\uff1a" + std::to_wstring(static_cast<int>(player.damageDone)), 500, 330, 22, RGB(235, 230, 220));
+        text(hdc, L"\u632f\u5200\u6210\u529f\uff1a" + std::to_wstring(player.parries), 500, 365, 22, RGB(235, 230, 220));
+        text(hdc, L"\u6700\u5927\u8fde\u62db\uff1a" + std::to_wstring(player.maxCombo), 500, 400, 22, RGB(235, 230, 220));
+        text(hdc, L"\u84c4\u529b\u547d\u4e2d\uff1a" + std::to_wstring(player.chargeHits), 500, 435, 22, RGB(235, 230, 220));
+        text(hdc, L"\u95ea\u907f\u6b21\u6570\uff1a" + std::to_wstring(player.dodges), 500, 470, 22, RGB(235, 230, 220));
         rect(hdc, 420, 520, 200, 52, RGB(225, 222, 205));
         rect(hdc, 660, 520, 200, 52, RGB(40, 40, 38));
-        text(hdc, L"再来一局", 470, 532, 22, RGB(25, 25, 25), false);
-        text(hdc, L"返回菜单", 710, 532, 22, RGB(240, 235, 220), false);
+        text(hdc, nextLabel, 470, 532, 22, RGB(25, 25, 25), false);
+        text(hdc, L"\u8fd4\u56de\u83dc\u5355", 710, 532, 22, RGB(240, 235, 220), false);
     }
 };
 
@@ -2267,6 +2363,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     if (std::wstring(GetCommandLineW()).find(L"--self-test-death") != std::wstring::npos) {
         return g.runDeathSelfTest() ? 0 : 2;
+    }
+    if (std::wstring(GetCommandLineW()).find(L"--self-test-match-flow") != std::wstring::npos) {
+        return g.runMatchFlowSelfTest() ? 0 : 3;
     }
 
     WNDCLASSW wc{};
