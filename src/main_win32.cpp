@@ -127,6 +127,12 @@ const std::array<const wchar_t*, 3> CharacterVfxFolder = {{
     L"characters\\suxin\\sprites\\vfx\\"
 }};
 
+const std::array<const wchar_t*, 3> WeaponModelFolder = {{
+    L"weapons\\longsword\\sprites\\model\\",
+    L"weapons\\broadsword\\sprites\\model\\",
+    L"weapons\\dualblades\\sprites\\model\\"
+}};
+
 struct Input {
     bool attackPress = false;
     bool attackRelease = false;
@@ -245,6 +251,9 @@ public:
         for (auto& image : weaponSelectBackgrounds) {
             image.destroy();
         }
+        for (auto& image : weaponModelSprites) {
+            image.destroy();
+        }
         menuBackground.destroy();
         battleBackground.destroy();
         battleGround.destroy();
@@ -328,6 +337,14 @@ public:
         }
 
         const int count = optionCount();
+        if (key == VK_HOME) {
+            menu = 0;
+            sync();
+        }
+        if (key == VK_END) {
+            menu = count - 1;
+            sync();
+        }
         if (key == VK_UP || key == VK_LEFT || key == 'W' || key == 'A') {
             menu = (menu + count - 1) % count;
             sync();
@@ -475,6 +492,7 @@ private:
     BitmapImage battleGround;
     std::array<BitmapImage, 3> characterSelectBackgrounds;
     std::array<BitmapImage, 3> weaponSelectBackgrounds;
+    std::array<BitmapImage, 3> weaponModelSprites;
     std::array<std::array<BitmapImage, static_cast<size_t>(ActionSpriteSlot::Count)>, 3> characterSprites;
     std::array<BitmapImage, 3> characterUltimateVfx;
 
@@ -488,6 +506,10 @@ private:
 
     BitmapImage& ultimateVfx(int role) {
         return characterUltimateVfx[static_cast<size_t>(std::max(0, std::min(role, 2)))];
+    }
+
+    BitmapImage& weaponModelSprite(int weapon) {
+        return weaponModelSprites[static_cast<size_t>(std::max(0, std::min(weapon, 2)))];
     }
 
     ActionSpriteLayout spriteLayoutFor(ActionSpriteSlot slot) const {
@@ -588,6 +610,7 @@ private:
         loadArenaGround();
         loadSelectBackgrounds();
         loadAllCharacterActionSprites();
+        loadWeaponModelSprites();
     }
 
     std::wstring exeDir() const {
@@ -626,6 +649,13 @@ private:
     void loadAllCharacterActionSprites() {
         for (int role = 0; role < static_cast<int>(CharacterSpriteFolder.size()); ++role) {
             loadCharacterActionSprites(role);
+        }
+    }
+
+    void loadWeaponModelSprites() {
+        const std::wstring root = exeDir() + L"\\assets\\art\\";
+        for (int weapon = 0; weapon < static_cast<int>(WeaponModelFolder.size()); ++weapon) {
+            loadPng(root + WeaponModelFolder[static_cast<size_t>(weapon)] + L"model_01.png", weaponModelSprite(weapon));
         }
     }
 
@@ -1877,7 +1907,35 @@ private:
         return drawBitmapAlpha(hdc, image, drawX, drawY, drawW, drawH, f.facing > 0, 220);
     }
 
+    bool drawWeaponSprite(HDC hdc, const Fighter& f, int x, int y, int weapon) {
+        const BitmapImage& image = weaponModelSprites[static_cast<size_t>(std::max(0, std::min(weapon, 2)))];
+        if (!image.bitmap || image.width <= 0 || image.height <= 0) return false;
+        const int d = f.facing;
+        const int handX = x + d * 22;
+        const int handY = y - 55;
+        int drawW = 132;
+        int drawH = std::max(24, static_cast<int>(drawW * static_cast<float>(image.height) / static_cast<float>(image.width)));
+        int drawX = d > 0 ? handX - 18 : handX - drawW + 18;
+        int drawY = handY - drawH / 2 - 2;
+        BYTE alpha = f.action == Action::Hit ? 180 : 255;
+
+        if (weapon == 1) {
+            drawW = 152;
+            drawH = std::max(38, static_cast<int>(drawW * static_cast<float>(image.height) / static_cast<float>(image.width)));
+            drawX = d > 0 ? handX - 24 : handX - drawW + 24;
+            drawY = handY - drawH / 2 + 2;
+        } else if (weapon == 2) {
+            drawW = 118;
+            drawH = std::max(74, static_cast<int>(drawW * static_cast<float>(image.height) / static_cast<float>(image.width)));
+            drawX = handX - drawW / 2 + d * 42;
+            drawY = handY - drawH / 2 - 2;
+        }
+
+        return drawBitmapAlpha(hdc, image, drawX, drawY, drawW, drawH, d < 0, alpha);
+    }
+
     void drawWeapon(HDC hdc, const Fighter& f, int x, int y, int role, int weapon) {
+        if (drawWeaponSprite(hdc, f, x, y, weapon)) return;
         const int d = f.facing;
         const int handX = x + d * 22;
         const int handY = y - 55;

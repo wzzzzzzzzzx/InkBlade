@@ -27,6 +27,7 @@ $WM_LBUTTONDOWN = 0x0201
 $WM_LBUTTONUP = 0x0202
 $VK_RETURN = 0x0D
 $VK_DOWN = 0x28
+$VK_HOME = 0x24
 $VK_ESCAPE = 0x1B
 
 function Make-LParam([int]$x, [int]$y) {
@@ -172,11 +173,15 @@ function Wait-ForWindow($process) {
 }
 
 function Enter-Battle([IntPtr]$hwnd, [int]$charIndex, [int]$weaponIndex) {
+    Send-MenuKey $hwnd $VK_HOME
     Send-MenuKey $hwnd $VK_RETURN
+    Send-MenuKey $hwnd $VK_HOME
     for ($i = 0; $i -lt $charIndex; $i++) { Send-MenuKey $hwnd $VK_DOWN }
     Send-MenuKey $hwnd $VK_RETURN
+    Send-MenuKey $hwnd $VK_HOME
     for ($i = 0; $i -lt $weaponIndex; $i++) { Send-MenuKey $hwnd $VK_DOWN }
     Send-MenuKey $hwnd $VK_RETURN
+    Send-MenuKey $hwnd $VK_HOME
     Send-MenuKey $hwnd $VK_RETURN
     for ($i = 0; $i -lt 50; $i++) {
         if (Title-EndsWithCodepoints $hwnd @(25112, 26007)) { return }
