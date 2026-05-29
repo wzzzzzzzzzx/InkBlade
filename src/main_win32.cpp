@@ -173,6 +173,16 @@ struct Effect {
     int role;
 };
 
+struct FloatingText {
+    Vec p;
+    Vec v;
+    std::wstring text;
+    COLORREF color;
+    float life;
+    float maxLife;
+    int size;
+};
+
 struct Fighter {
     Character c = Characters[0];
     Weapon w = Weapons[0];
@@ -191,6 +201,7 @@ struct Fighter {
     float bindTimer = 0.f;
     float slowTimer = 0.f;
     float lotusTimer = 0.f;
+    float flashTimer = 0.f;
     float z = 0.f;
     float vz = 0.f;
     int comboIndex = 0;
@@ -389,6 +400,8 @@ public:
     }
 
     void paint(HDC hdc) {
+        const int shakeX = shakeTimer > 0.f ? static_cast<int>((rand01() - 0.5f) * shakeStrength * 2.f) : 0;
+        const int shakeY = shakeTimer > 0.f ? static_cast<int>((rand01() - 0.5f) * shakeStrength * 2.f) : 0;
         RECT rc{0, 0, W, H};
         HDC mem = CreateCompatibleDC(hdc);
         HBITMAP bmp = CreateCompatibleBitmap(hdc, W, H);
@@ -401,13 +414,19 @@ public:
             drawFighter(mem, player);
             drawEffects(mem, false);
             drawParticles(mem);
+            drawFloatingTexts(mem);
             drawHud(mem);
             if (screen == Screen::Result) drawResult(mem);
         } else {
             drawParticles(mem);
             drawMenu(mem);
         }
-        BitBlt(hdc, 0, 0, W, H, mem, 0, 0, SRCCOPY);
+        if (shakeX != 0 || shakeY != 0) {
+            HBRUSH black = brush(RGB(5, 5, 5));
+            FillRect(hdc, &rc, black);
+            DeleteObject(black);
+        }
+        BitBlt(hdc, shakeX, shakeY, W, H, mem, 0, 0, SRCCOPY);
         SelectObject(mem, oldBmp);
         DeleteObject(bmp);
         DeleteDC(mem);
@@ -419,6 +438,7 @@ private:
     std::mt19937 rng{std::random_device{}()};
     std::vector<Particle> particles;
     std::vector<Effect> effects;
+    std::vector<FloatingText> floatingTexts;
     Fighter player;
     Fighter ai;
     Input input;
@@ -441,6 +461,10 @@ private:
     bool win = false;
     std::wstring message;
     float messageTimer = 0.f;
+    float hitStopTimer = 0.f;
+    float shakeTimer = 0.f;
+    float shakeStrength = 0.f;
+    bool koFeedbackPlayed = false;
     float animationClock = 0.f;
     Screen titleScreen = Screen::Main;
     bool titleInitialized = false;
@@ -829,6 +853,11 @@ private:
         aiThink = 0.f;
         particles.clear();
         effects.clear();
+        floatingTexts.clear();
+        hitStopTimer = 0.f;
+        shakeTimer = 0.f;
+        shakeStrength = 0.f;
+        koFeedbackPlayed = false;
     }
 
     void startVisualLab() {
@@ -965,10 +994,12 @@ private:
     }
 
     void update(float dt) {
+        updateFeedback(dt);
         updateParticles(dt);
         updateEffects(dt);
         if (messageTimer > 0.f) messageTimer -= dt;
         if (screen != Screen::Battle) return;
+        if (hitStopTimer > 0.f) return;
         if (practiceMode) {
             timeLeft = 99.f;
         } else {
@@ -993,6 +1024,7 @@ private:
     void finishBattleIfOver() {
         if (!practiceMode && (player.hp <= 0.f || ai.hp <= 0.f || timeLeft <= 0.f)) {
             win = player.hp >= ai.hp;
+            triggerKoFeedback();
             screen = Screen::Result;
         }
     }
@@ -1201,8 +1233,11 @@ private:
             d.action = Action::Counter;
             d.actionTimer = 0.28f;
             d.parries++;
-            message = L"振刀成功";
+            d.flashTimer = 0.12f;
+            message = L"\u632f\u5200\u6210\u529f";
             messageTimer = 1.f;
+            addFloatingText({d.p.x, d.p.y - 162.f}, L"\u632f\u5200", RGB(245, 245, 235), 34);
+            addHitStop(0.12f, 10.f);
             splash(d.p, RGB(245, 245, 235), 32);
             addEffect(EffectType::ParrySuccess, d.p, RGB(245, 245, 235), 0.52f, 145.f, d.facing, 0);
             addEffect(EffectType::HitBurst, a.p, RGB(160, 160, 160), 0.3f, 90.f, -d.facing, 1);
@@ -1214,6 +1249,9 @@ private:
             }
             d.action = Action::Hit;
             d.actionTimer = 0.35f;
+            message = L"\u5e73A\u7834\u62db";
+            messageTimer = 0.75f;
+            addFloatingText({d.p.x, d.p.y - 164.f}, L"\u7834\u62db", RGB(245, 235, 165), 28);
         }
 
         float damage = BaseDamage * mult * a.c.attack;
@@ -1236,6 +1274,7 @@ private:
         }
         splash(d.p, a.c.color, 20);
         addEffect(EffectType::HitBurst, d.p, charge ? RGB(205, 35, 45) : a.c.color, charge ? 0.42f : 0.28f, charge ? 120.f : 70.f, a.facing, charge ? 2 : 0, characterIndex(a));
+        addHitFeedback(a, d, damage, charge, control, defeatedByThisHit);
     }
 
     float rand01() {
@@ -1279,6 +1318,46 @@ private:
         }
     }
 
+    void addFloatingText(Vec p, const std::wstring& value, COLORREF color, int size = 28) {
+        floatingTexts.push_back({p, {-18.f + rand01() * 36.f, -92.f - rand01() * 34.f}, value, color, 0.82f, 0.82f, size});
+    }
+
+    void addHitStop(float seconds, float shake) {
+        hitStopTimer = std::max(hitStopTimer, seconds);
+        shakeTimer = std::max(shakeTimer, seconds + 0.08f);
+        shakeStrength = std::max(shakeStrength, shake);
+    }
+
+    void addHitFeedback(Fighter& attacker, Fighter& defender, float damage, bool charge, bool control, bool defeated) {
+        defender.flashTimer = 0.16f;
+        const int shownDamage = static_cast<int>(std::ceil(std::max(0.f, damage)));
+        addFloatingText({defender.p.x + attacker.facing * 20.f, defender.p.y - 132.f}, L"-" + std::to_wstring(shownDamage), charge ? RGB(255, 225, 105) : RGB(245, 245, 235), charge ? 34 : 28);
+        if (charge) {
+            addFloatingText({defender.p.x, defender.p.y - 168.f}, L"\u84c4\u529b\u547d\u4e2d", RGB(255, 205, 80), 24);
+            message = L"\u84c4\u529b\u547d\u4e2d";
+            messageTimer = 0.75f;
+        } else if (attacker.action == Action::Counter) {
+            addFloatingText({defender.p.x, defender.p.y - 168.f}, L"\u53cd\u51fb", RGB(245, 245, 235), 24);
+            message = L"\u632f\u5200\u53cd\u51fb";
+            messageTimer = 0.75f;
+        } else if (control) {
+            addFloatingText({defender.p.x, defender.p.y - 168.f}, L"\u63a7\u5236", attacker.c.color, 24);
+        }
+        addHitStop(defeated ? 0.18f : (charge ? 0.11f : 0.055f), defeated ? 13.f : (charge ? 9.f : 4.f));
+    }
+
+    void triggerKoFeedback() {
+        if (koFeedbackPlayed) return;
+        koFeedbackPlayed = true;
+        const Vec p = player.hp <= 0.f ? player.p : ai.p;
+        splash({p.x, p.y - 70.f}, RGB(245, 235, 210), 52);
+        addEffect(EffectType::HitBurst, {p.x, p.y - 44.f}, RGB(245, 235, 210), 0.62f, 150.f, 1, 2);
+        addFloatingText({W * 0.5f, 230.f}, L"KO", RGB(245, 235, 210), 72);
+        message = win ? L"\u80dc\u5229" : L"\u6218\u8d25";
+        messageTimer = 1.4f;
+        addHitStop(0.22f, 16.f);
+    }
+
     void addEffect(EffectType type, Vec p, COLORREF c, float life, float radius, int facing, int level, int role = -1) {
         effects.push_back({type, p, c, life, life, radius, facing, level, role});
     }
@@ -1302,6 +1381,21 @@ private:
             e.life -= dt;
         }
         effects.erase(std::remove_if(effects.begin(), effects.end(), [](const Effect& e) { return e.life <= 0.f; }), effects.end());
+    }
+
+    void updateFeedback(float dt) {
+        hitStopTimer = std::max(0.f, hitStopTimer - dt);
+        shakeTimer = std::max(0.f, shakeTimer - dt);
+        if (shakeTimer <= 0.f) shakeStrength = 0.f;
+        player.flashTimer = std::max(0.f, player.flashTimer - dt);
+        ai.flashTimer = std::max(0.f, ai.flashTimer - dt);
+        for (auto& f : floatingTexts) {
+            f.life -= dt;
+            f.p.x += f.v.x * dt;
+            f.p.y += f.v.y * dt;
+            f.v.y += 95.f * dt;
+        }
+        floatingTexts.erase(std::remove_if(floatingTexts.begin(), floatingTexts.end(), [](const FloatingText& f) { return f.life <= 0.f; }), floatingTexts.end());
     }
 
     void updateParticles(float dt) {
@@ -1573,6 +1667,22 @@ private:
         }
     }
 
+    void drawFloatingTexts(HDC hdc) {
+        for (const auto& f : floatingTexts) {
+            const float k = clampf(f.life / f.maxLife, 0.f, 1.f);
+            const int size = std::max(16, static_cast<int>(f.size * (0.86f + 0.22f * k)));
+            const int x = static_cast<int>(f.p.x);
+            const int y = static_cast<int>(f.p.y);
+            if (f.text == L"KO") {
+                text(hdc, f.text, 0, y + 3, size, RGB(20, 20, 20), true);
+                text(hdc, f.text, 0, y, size, f.color, true);
+            } else {
+                text(hdc, f.text, x + 2, y + 2, size, RGB(18, 18, 18));
+                text(hdc, f.text, x, y, size, f.color);
+            }
+        }
+    }
+
     void drawRoleSlash(HDC hdc, const Effect& e, int x, int y, int r) {
         const int role = e.role < 0 ? 0 : e.role;
         const int wide = e.level == 2 ? 10 : (e.level == 1 ? 5 : 4);
@@ -1799,6 +1909,20 @@ private:
         }
     }
 
+    void drawHitFlash(HDC hdc, const Fighter& f, int x, int y) {
+        if (f.flashTimer <= 0.f) return;
+        const int pulse = static_cast<int>(f.flashTimer * 35.f);
+        HPEN pen = CreatePen(PS_SOLID, 3, RGB(245, 245, 245));
+        HGDIOBJ oldPen = SelectObject(hdc, pen);
+        HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
+        Ellipse(hdc, x - 42 - pulse, y - 126 - pulse, x + 42 + pulse, y + 34 + pulse);
+        SelectObject(hdc, oldBrush);
+        SelectObject(hdc, oldPen);
+        DeleteObject(pen);
+        line(hdc, x - 48, y - 86, x + 48, y - 34, RGB(245, 245, 245), 4);
+        line(hdc, x + 48, y - 86, x - 48, y - 34, RGB(245, 245, 245), 4);
+    }
+
     void drawFighter(HDC hdc, const Fighter& f) {
         int x = static_cast<int>(f.p.x);
         int y = static_cast<int>(f.p.y - f.z);
@@ -1820,6 +1944,7 @@ private:
                 f.airborne) &&
             drawCharacterSprite(hdc, f, x, y)) {
             drawWeapon(hdc, f, x, y, role, weapon);
+            drawHitFlash(hdc, f, x, y);
             return;
         }
         if (role == 0) {
@@ -1863,6 +1988,7 @@ private:
             line(hdc, x + 24, y - 70, x + 52, y - 22, RGB(255, 180, 215), 6);
         }
         ellipse(hdc, x - 21, y - 115, 42, 42, RGB(232, 222, 205));
+        drawHitFlash(hdc, f, x, y);
         if (role == 0) {
             line(hdc, x - 13, y - 114, x - 24, y - 70, RGB(238, 252, 255), 5);
             line(hdc, x + 10, y - 114, x + 3, y - 72, RGB(205, 235, 245), 3);
