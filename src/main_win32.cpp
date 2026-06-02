@@ -76,6 +76,19 @@ struct Weapon {
     float counter;
 };
 
+struct WeaponActionTuning {
+    float normalRange;
+    float normalTimerBase;
+    float normalTimerStep;
+    float normalStaminaCost;
+    std::array<float, 3> chargeRange;
+    std::array<float, 3> chargeRangeScale;
+    std::array<float, 3> chargeStaminaCost;
+    float chargeReleaseTimer;
+    float counterRange;
+    float counterTimer;
+};
+
 const std::array<Character, 3> Characters = {{
     {L"凌霜", L"输出型剑客", 900.f, 1.15f, 260.f, 15.f, 1.25f, 1.f, RGB(115, 205, 255), L"被动：所有伤害 +15%", L"F：寒冰突刺，冲刺并减速", L"V：冰华乱舞，霸体连斩"},
     {L"墨痕", L"控制型书生", 1000.f, 0.9f, 280.f, 15.f, 1.f, 1.f, RGB(165, 105, 230), L"被动：技能冷却 -20%", L"F：墨缚印，短暂定身", L"V：天罗墨网，大范围禁闪"},
@@ -86,6 +99,12 @@ const std::array<Weapon, 3> Weapons = {{
     {L"长剑", L"均衡型", {1.f, 1.f, 1.5f}, {1.5f, 2.f, 3.f}, 0.17f, 1.2f},
     {L"大刀", L"重型", {1.3f, 2.f}, {2.f, 2.8f, 4.f}, 0.13f, 2.f},
     {L"双刃", L"速攻型", {0.6f, 0.6f, 0.8f, 0.8f, 1.2f}, {1.5f, 2.2f, 2.8f}, 0.2f, 0.8f}
+}};
+
+const std::array<WeaponActionTuning, 3> WeaponTunings = {{
+    {104.f, 0.20f, 0.03f, 7.f, {190.f, 270.f, 360.f}, {1.f, 1.2f, 1.5f}, {12.f, 18.f, 26.f}, 0.30f, 128.f, 0.28f},
+    {126.f, 0.27f, 0.05f, 12.f, {165.f, 220.f, 285.f}, {1.f, 1.25f, 1.55f}, {18.f, 26.f, 36.f}, 0.42f, 150.f, 0.34f},
+    {82.f, 0.14f, 0.02f, 5.f, {135.f, 185.f, 235.f}, {1.f, 1.15f, 1.35f}, {10.f, 15.f, 22.f}, 0.24f, 112.f, 0.22f}
 }};
 
 enum class Screen { Main, Character, Weapon, Difficulty, Practice, Battle, Result };
@@ -106,6 +125,15 @@ enum class ActionSpriteSlot {
     Skill,
     Ultimate,
     Count
+};
+
+struct AttackProfile {
+    bool active = false;
+    float range = 0.f;
+    float verticalRange = 90.f;
+    float multiplier = 0.f;
+    bool charge = false;
+    bool control = false;
 };
 
 struct ActionSpriteLayout {
@@ -323,6 +351,9 @@ public:
                 screen = Screen::Main;
                 menu = 0;
             }
+            if (key == 'H' && practiceMode) {
+                practiceDebugHitboxes = !practiceDebugHitboxes;
+            }
             return;
         }
         if (screen == Screen::Result) {
@@ -431,6 +462,7 @@ public:
             drawEffects(mem, false);
             drawParticles(mem);
             drawFloatingTexts(mem);
+            drawCombatDebug(mem);
             drawHud(mem);
             if (screen == Screen::Result) drawResult(mem);
         } else {
@@ -474,6 +506,7 @@ private:
     bool practiceEnemyAttacks = false;
     bool practiceFullEnergy = true;
     bool practiceEnemyFullEnergy = false;
+    bool practiceDebugHitboxes = false;
     bool win = false;
     bool roundWin = false;
     bool matchComplete = false;
@@ -783,6 +816,14 @@ private:
             }
             return -1;
         }
+        if (screen == Screen::Practice) {
+            for (int i = 0; i < count; ++i) {
+                if (inside(x, y, 380, 250 + i * 58, 520, 44)) {
+                    return i;
+                }
+            }
+            return -1;
+        }
         for (int i = 0; i < count; ++i) {
             if (inside(x, y, 380, 260 + i * 70, 520, 48)) {
                 return i;
@@ -796,7 +837,7 @@ private:
         if (screen == Screen::Character) return 3;
         if (screen == Screen::Weapon) return 3;
         if (screen == Screen::Difficulty) return 3;
-        if (screen == Screen::Practice) return 4;
+        if (screen == Screen::Practice) return 5;
         return 1;
     }
 
@@ -839,6 +880,8 @@ private:
                 practiceFullEnergy = !practiceFullEnergy;
             } else if (menu == 2) {
                 practiceEnemyFullEnergy = !practiceEnemyFullEnergy;
+            } else if (menu == 3) {
+                practiceDebugHitboxes = !practiceDebugHitboxes;
             } else {
                 practiceMode = true;
                 difficulty = Difficulty::Easy;
@@ -894,6 +937,10 @@ private:
 
     bool roundIntroActive() const {
         return !practiceMode && !visualLabMode && roundIntroTimer > 0.f;
+    }
+
+    bool showCombatDebug() const {
+        return screen == Screen::Battle && (practiceDebugHitboxes || visualLabMode);
     }
 
     void startRoundIntro() {
@@ -1236,6 +1283,61 @@ public:
         return frozen && released && clockRuns && practiceSkipsIntro;
     }
 
+    bool runWeaponTuningSelfTest() {
+        charSel = 0;
+        difficulty = Difficulty::Easy;
+        practiceMode = true;
+        visualLabMode = false;
+        screen = Screen::Battle;
+
+        weaponSel = 0;
+        resetBattle();
+        player.action = Action::Normal;
+        player.comboIndex = 1;
+        const AttackProfile swordNormal = attackProfile(player);
+
+        weaponSel = 1;
+        resetBattle();
+        player.action = Action::Normal;
+        player.comboIndex = 1;
+        const AttackProfile broadswordNormal = attackProfile(player);
+
+        weaponSel = 2;
+        resetBattle();
+        player.action = Action::Normal;
+        player.comboIndex = 1;
+        const AttackProfile dualNormal = attackProfile(player);
+
+        weaponSel = 0;
+        resetBattle();
+        player.action = Action::ChargeRelease;
+        player.chargeTimer = 1.1f;
+        const AttackProfile swordCharge = attackProfile(player);
+
+        weaponSel = 1;
+        resetBattle();
+        player.action = Action::ChargeRelease;
+        player.chargeTimer = 1.1f;
+        const AttackProfile broadswordCharge = attackProfile(player);
+
+        practiceDebugHitboxes = false;
+        const bool hidden = !showCombatDebug();
+        practiceDebugHitboxes = true;
+        const bool visible = showCombatDebug();
+
+        return
+            swordNormal.active &&
+            broadswordNormal.range > swordNormal.range &&
+            dualNormal.range < swordNormal.range &&
+            WeaponTunings[1].normalTimerBase > WeaponTunings[0].normalTimerBase &&
+            WeaponTunings[2].normalTimerBase < WeaponTunings[0].normalTimerBase &&
+            swordCharge.charge &&
+            swordCharge.range > broadswordCharge.range &&
+            weaponTuning(ai).counterRange > 0.f &&
+            hidden &&
+            visible;
+    }
+
 private:
     bool freeToAct(const Fighter& f) const {
         return f.action == Action::Idle || f.action == Action::Dodge;
@@ -1304,10 +1406,18 @@ private:
             if (f.chargeTimer < QuickAttackThreshold) {
                 normal(f);
             } else {
+                const WeaponActionTuning& tuning = weaponTuning(f);
+                const int lvl = chargeLevel(f.chargeTimer);
+                if (f.stamina < tuning.chargeStaminaCost[static_cast<size_t>(lvl)]) {
+                    f.action = Action::Idle;
+                    f.chargeTimer = 0.f;
+                    return;
+                }
+                f.stamina -= tuning.chargeStaminaCost[static_cast<size_t>(lvl)];
                 f.action = Action::ChargeRelease;
-                f.actionTimer = 0.28f;
+                f.actionTimer = tuning.chargeReleaseTimer;
                 splash({f.p.x + f.facing * 55.f, f.p.y - 30.f}, RGB(15, 15, 15), 18);
-                addEffect(EffectType::ChargeRelease, {f.p.x + f.facing * 75.f, f.p.y - 45.f}, f.c.color, 0.36f, 115.f + 30.f * chargeLevel(f.chargeTimer), f.facing, chargeLevel(f.chargeTimer), characterIndex(f));
+                addEffect(EffectType::ChargeRelease, {f.p.x + f.facing * 75.f, f.p.y - 45.f}, f.c.color, 0.36f, 115.f + 30.f * lvl, f.facing, lvl, characterIndex(f));
             }
         } else if (in.attackPress && f.comboTimer > 0.f) {
             normal(f);
@@ -1331,8 +1441,14 @@ private:
     }
 
     void normal(Fighter& f) {
+        const WeaponActionTuning& tuning = weaponTuning(f);
+        if (f.stamina < tuning.normalStaminaCost) {
+            f.action = Action::Idle;
+            return;
+        }
+        f.stamina -= tuning.normalStaminaCost;
         f.action = Action::Normal;
-        f.actionTimer = 0.2f + 0.03f * f.comboIndex;
+        f.actionTimer = tuning.normalTimerBase + tuning.normalTimerStep * f.comboIndex;
         f.comboTimer = 0.32f;
         f.comboIndex = (f.comboIndex + 1) % static_cast<int>(f.w.combo.size());
         f.maxCombo = std::max(f.maxCombo, f.comboIndex + 1);
@@ -1368,43 +1484,18 @@ private:
 
     void resolve(Fighter& a, Fighter& d) {
         if (a.actionTimer <= 0.f || d.hitTimer > 0.f || d.action == Action::Down) return;
-        float range = 0.f;
-        float mult = 0.f;
-        bool charge = false;
-        bool control = false;
-        if (a.action == Action::Normal) {
-            range = 95.f;
-            int idx = (a.comboIndex - 1 + static_cast<int>(a.w.combo.size())) % static_cast<int>(a.w.combo.size());
-            mult = a.w.combo[idx];
-        } else if (a.action == Action::ChargeRelease) {
-            range = a.w.name == Weapons[0].name ? 360.f : (a.w.name == Weapons[2].name ? 230.f : 130.f);
-            int lvl = chargeLevel(a.chargeTimer);
-            mult = a.w.charge[lvl] * (lvl == 0 ? 1.f : (lvl == 1 ? 1.2f : 1.5f));
-            charge = true;
-        } else if (a.action == Action::Counter) {
-            range = 120.f;
-            mult = a.w.counter;
-        } else if (a.action == Action::Skill) {
-            range = a.c.name == Characters[1].name ? 210.f : 105.f;
-            mult = a.c.name == Characters[2].name ? 0.f : 0.9f;
-            control = true;
-        } else if (a.action == Action::Ultimate) {
-            range = a.c.name == Characters[1].name ? 390.f : 150.f;
-            mult = a.c.name == Characters[0].name ? 3.5f : (a.c.name == Characters[1].name ? 1.5f : 0.f);
-            control = true;
-        } else {
-            return;
-        }
+        const AttackProfile profile = attackProfile(a);
+        if (!profile.active) return;
 
         const float dx = d.p.x - a.p.x;
         const bool front = a.facing > 0 ? dx > -30.f : dx < 30.f;
-        if (!front || absf(dx) > range || absf(d.p.y - a.p.y) > 90.f) return;
+        if (!front || absf(dx) > profile.range || absf(d.p.y - a.p.y) > profile.verticalRange) return;
 
-        if (charge && d.action == Action::Parry && d.actionTimer > 0.f) {
+        if (profile.charge && d.action == Action::Parry && d.actionTimer > 0.f) {
             a.action = Action::Hit;
             a.actionTimer = 0.35f;
             d.action = Action::Counter;
-            d.actionTimer = 0.28f;
+            d.actionTimer = weaponTuning(d).counterTimer;
             d.parries++;
             d.flashTimer = 0.12f;
             message = L"\u632f\u5200\u6210\u529f";
@@ -1427,7 +1518,7 @@ private:
             addFloatingText({d.p.x, d.p.y - 164.f}, L"\u7834\u62db", RGB(245, 235, 165), 28);
         }
 
-        float damage = BaseDamage * mult * a.c.attack;
+        float damage = BaseDamage * profile.multiplier * a.c.attack;
         if (d.lotusTimer > 0.f) damage *= 0.7f;
         const float hpBeforeDamage = d.hp;
         d.hp = clampf(d.hp - damage, 0.f, d.c.hp);
@@ -1439,15 +1530,15 @@ private:
         d.hitTimer = 0.25f;
         d.action = Action::Hit;
         d.actionTimer = 0.25f;
-        d.p.x += a.facing * (charge ? 45.f : 18.f);
-        if (charge) a.chargeHits++;
-        if (control) {
+        d.p.x += a.facing * (profile.charge ? 45.f : 18.f);
+        if (profile.charge) a.chargeHits++;
+        if (profile.control) {
             if (a.c.name == Characters[0].name) d.slowTimer = 2.f;
             if (a.c.name == Characters[1].name) d.bindTimer = a.action == Action::Ultimate ? 2.f : 1.f;
         }
         splash(d.p, a.c.color, 20);
-        addEffect(EffectType::HitBurst, d.p, charge ? RGB(205, 35, 45) : a.c.color, charge ? 0.42f : 0.28f, charge ? 120.f : 70.f, a.facing, charge ? 2 : 0, characterIndex(a));
-        addHitFeedback(a, d, damage, charge, control, defeatedByThisHit);
+        addEffect(EffectType::HitBurst, d.p, profile.charge ? RGB(205, 35, 45) : a.c.color, profile.charge ? 0.42f : 0.28f, profile.charge ? 120.f : 70.f, a.facing, profile.charge ? 2 : 0, characterIndex(a));
+        addHitFeedback(a, d, damage, profile.charge, profile.control, defeatedByThisHit);
     }
 
     float rand01() {
@@ -1553,6 +1644,42 @@ private:
         return 0;
     }
 
+    const WeaponActionTuning& weaponTuning(const Fighter& f) const {
+        return WeaponTunings[static_cast<size_t>(weaponIndex(f))];
+    }
+
+    AttackProfile attackProfile(const Fighter& f) const {
+        AttackProfile profile;
+        const WeaponActionTuning& tuning = weaponTuning(f);
+        if (f.action == Action::Normal) {
+            const int idx = (f.comboIndex - 1 + static_cast<int>(f.w.combo.size())) % static_cast<int>(f.w.combo.size());
+            profile.active = true;
+            profile.range = tuning.normalRange;
+            profile.multiplier = f.w.combo[static_cast<size_t>(idx)];
+        } else if (f.action == Action::ChargeRelease) {
+            const int lvl = chargeLevel(f.chargeTimer);
+            profile.active = true;
+            profile.range = tuning.chargeRange[static_cast<size_t>(lvl)];
+            profile.multiplier = f.w.charge[static_cast<size_t>(lvl)] * tuning.chargeRangeScale[static_cast<size_t>(lvl)];
+            profile.charge = true;
+        } else if (f.action == Action::Counter) {
+            profile.active = true;
+            profile.range = tuning.counterRange;
+            profile.multiplier = f.w.counter;
+        } else if (f.action == Action::Skill) {
+            profile.active = true;
+            profile.range = f.c.name == Characters[1].name ? 210.f : 105.f;
+            profile.multiplier = f.c.name == Characters[2].name ? 0.f : 0.9f;
+            profile.control = true;
+        } else if (f.action == Action::Ultimate) {
+            profile.active = true;
+            profile.range = f.c.name == Characters[1].name ? 390.f : 150.f;
+            profile.multiplier = f.c.name == Characters[0].name ? 3.5f : (f.c.name == Characters[1].name ? 1.5f : 0.f);
+            profile.control = true;
+        }
+        return profile;
+    }
+
     void updateEffects(float dt) {
         for (auto& e : effects) {
             e.life -= dt;
@@ -1599,6 +1726,18 @@ private:
         RECT r{std::min(x, x2), std::min(y, y2), std::max(x, x2), std::max(y, y2)};
         FillRect(hdc, &r, b);
         DeleteObject(b);
+    }
+
+    void outlineRect(HDC hdc, int x, int y, int w, int h, COLORREF color, int thickness = 2) {
+        const int x2 = x + w;
+        const int y2 = y + h;
+        HPEN pen = CreatePen(PS_SOLID, thickness, color);
+        HGDIOBJ oldPen = SelectObject(hdc, pen);
+        HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
+        Rectangle(hdc, std::min(x, x2), std::min(y, y2), std::max(x, x2), std::max(y, y2));
+        SelectObject(hdc, oldBrush);
+        SelectObject(hdc, oldPen);
+        DeleteObject(pen);
     }
 
     void ellipse(HDC hdc, int x, int y, int w, int h, COLORREF fill, COLORREF penColor = RGB(20, 20, 20), int penW = 1) {
@@ -2259,6 +2398,31 @@ private:
         return drawBitmapAlpha(hdc, *image, drawX, drawY, drawW, drawH, mirrorSprite);
     }
 
+    void drawFighterDebug(HDC hdc, const Fighter& f, COLORREF attackColor, COLORREF bodyColor) {
+        const int x = static_cast<int>(f.p.x);
+        const int y = static_cast<int>(f.p.y);
+        outlineRect(hdc, x - 30, y - 90, 60, 180, bodyColor, 2);
+
+        const AttackProfile profile = attackProfile(f);
+        if (!profile.active || f.actionTimer <= 0.f) return;
+        const int reachBack = 30;
+        const int range = static_cast<int>(profile.range);
+        const int top = y - static_cast<int>(profile.verticalRange);
+        const int height = static_cast<int>(profile.verticalRange * 2.f);
+        if (f.facing > 0) {
+            outlineRect(hdc, x - reachBack, top, range + reachBack, height, attackColor, profile.charge ? 4 : 3);
+        } else {
+            outlineRect(hdc, x - range, top, range + reachBack, height, attackColor, profile.charge ? 4 : 3);
+        }
+    }
+
+    void drawCombatDebug(HDC hdc) {
+        if (!showCombatDebug()) return;
+        drawFighterDebug(hdc, player, RGB(245, 210, 80), RGB(245, 245, 245));
+        drawFighterDebug(hdc, ai, RGB(235, 80, 80), RGB(180, 220, 255));
+        text(hdc, L"H\uff1a\u5224\u5b9a\u6846", W - 188, H - 36, 16, RGB(235, 230, 205));
+    }
+
     void bar(HDC hdc, int x, int y, int w, int h, float k, COLORREF c) {
         rect(hdc, x, y, w, h, RGB(18, 18, 18));
         rect(hdc, x, y, static_cast<int>(w * clampf(k, 0.f, 1.f)), h, c);
@@ -2337,21 +2501,22 @@ private:
     }
 
     void drawPracticeSettings(HDC hdc) {
-        text(hdc, L"练习模式设置", 0, 142, 28, RGB(242, 238, 220), true);
-        text(hdc, L"默认敌人静止，适合测试平A、蓄力、振刀、技能和大招。", 0, 186, 18, RGB(210, 214, 202), true);
+        text(hdc, L"\u7ec3\u4e60\u6a21\u5f0f\u8bbe\u7f6e", 0, 142, 28, RGB(242, 238, 220), true);
+        text(hdc, L"\u9ed8\u8ba4\u654c\u4eba\u9759\u6b62\uff0c\u9002\u5408\u6d4b\u8bd5\u5e73A\u3001\u84c4\u529b\u3001\u632f\u5200\u3001\u6280\u80fd\u548c\u5927\u62db\u3002", 0, 186, 18, RGB(210, 214, 202), true);
         const std::vector<std::wstring> opts = {
-            std::wstring(L"敌人攻击：") + (practiceEnemyAttacks ? L"开" : L"关"),
-            std::wstring(L"玩家满大招能量：") + (practiceFullEnergy ? L"开" : L"关"),
-            std::wstring(L"敌人满大招能量：") + (practiceEnemyFullEnergy ? L"开" : L"关"),
-            L"开始练习"
+            std::wstring(L"\u654c\u4eba\u653b\u51fb\uff1a") + (practiceEnemyAttacks ? L"\u5f00" : L"\u5173"),
+            std::wstring(L"\u73a9\u5bb6\u6ee1\u5927\u62db\u80fd\u91cf\uff1a") + (practiceFullEnergy ? L"\u5f00" : L"\u5173"),
+            std::wstring(L"\u654c\u4eba\u6ee1\u5927\u62db\u80fd\u91cf\uff1a") + (practiceEnemyFullEnergy ? L"\u5f00" : L"\u5173"),
+            std::wstring(L"\u663e\u793a\u5224\u5b9a\u6846\uff1a") + (practiceDebugHitboxes ? L"\u5f00" : L"\u5173"),
+            L"\u5f00\u59cb\u7ec3\u4e60"
         };
         for (int i = 0; i < static_cast<int>(opts.size()); ++i) {
             COLORREF bg = i == menu ? RGB(225, 222, 205) : RGB(40, 40, 38);
             COLORREF fg = i == menu ? RGB(25, 25, 25) : RGB(240, 235, 220);
-            rect(hdc, 380, 260 + i * 70, 520, 48, bg);
-            text(hdc, opts[i], 0, 272 + i * 70, 23, fg, true);
+            rect(hdc, 380, 250 + i * 58, 520, 44, bg);
+            text(hdc, opts[i], 0, 260 + i * 58, 21, fg, true);
         }
-        text(hdc, L"Enter 切换选项 / 开始，Esc 返回主菜单", 0, 568, 18, RGB(210, 214, 202), true);
+        text(hdc, L"Enter \u5207\u6362\u9009\u9879 / \u5f00\u59cb\uff0cH \u5207\u6362\u5224\u5b9a\u6846\uff0cEsc \u8fd4\u56de\u4e3b\u83dc\u5355", 0, 568, 18, RGB(210, 214, 202), true);
     }
 
     void drawBattleTips(HDC hdc) {
@@ -2433,6 +2598,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     }
     if (std::wstring(GetCommandLineW()).find(L"--self-test-round-intro") != std::wstring::npos) {
         return g.runRoundIntroSelfTest() ? 0 : 4;
+    }
+    if (std::wstring(GetCommandLineW()).find(L"--self-test-weapon-tuning") != std::wstring::npos) {
+        return g.runWeaponTuningSelfTest() ? 0 : 5;
     }
 
     WNDCLASSW wc{};
