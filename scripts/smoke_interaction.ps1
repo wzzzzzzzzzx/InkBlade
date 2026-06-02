@@ -195,9 +195,9 @@ function Enter-PracticeBattle([IntPtr]$hwnd) {
     Start-Sleep -Milliseconds 60
     Send-Mouse $hwnd $false 640 540
     Start-Sleep -Milliseconds 200
-    Send-Mouse $hwnd $true 640 470
+    Send-Mouse $hwnd $true 640 504
     Start-Sleep -Milliseconds 60
-    Send-Mouse $hwnd $false 640 470
+    Send-Mouse $hwnd $false 640 504
     for ($i = 0; $i -lt 50; $i++) {
         if (Title-EndsWithCodepoints $hwnd @(25112, 26007)) { return }
         Start-Sleep -Milliseconds 100

@@ -29,6 +29,9 @@ constexpr float ArenaTop = 530.f;
 constexpr float ArenaBottom = 650.f;
 constexpr float QuickAttackThreshold = 0.18f;
 constexpr float RoundIntroDuration = 1.6f;
+const COLORREF HealthBarColor = RGB(180, 45, 50);
+const COLORREF UltimateEnergyColor = RGB(230, 185, 55);
+const COLORREF StaminaBarColor = RGB(70, 165, 210);
 
 struct Vec {
     float x = 0.f;
@@ -1283,6 +1286,39 @@ public:
         return frozen && released && clockRuns && practiceSkipsIntro;
     }
 
+    bool runUltimateEnergySelfTest() {
+        practiceMode = false;
+        visualLabMode = false;
+        weaponSel = 0;
+        difficulty = Difficulty::Easy;
+        screen = Screen::Battle;
+
+        for (int role = 0; role < static_cast<int>(Characters.size()); ++role) {
+            charSel = role;
+            resetBattle();
+            player.energy = 100.f;
+            player.stamina = 100.f;
+            player.action = Action::Idle;
+            Input ultInput;
+            ultInput.ultimate = true;
+            updateFighter(player, ultInput, 0.016f);
+            if (player.action != Action::Ultimate || player.energy != 0.f || player.actionTimer <= 0.f) {
+                return false;
+            }
+
+            resetBattle();
+            player.energy = 0.f;
+            player.stamina = 100.f;
+            player.action = Action::Idle;
+            updateFighter(player, ultInput, 0.016f);
+            if (player.action == Action::Ultimate) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     bool runWeaponTuningSelfTest() {
         charSel = 0;
         difficulty = Difficulty::Easy;
@@ -2430,13 +2466,19 @@ private:
 
     void drawHud(HDC hdc) {
         text(hdc, std::wstring(player.c.name) + L" / " + player.w.name, 24, 22, 18, RGB(240, 236, 220));
-        bar(hdc, 24, 54, 300, 16, player.hp / player.c.hp, RGB(180, 45, 50));
-        bar(hdc, 24, 76, 300, 10, player.energy / 100.f, RGB(70, 145, 230));
-        bar(hdc, 24, 92, 300, 10, player.stamina / 100.f, RGB(220, 180, 70));
+        bar(hdc, 24, 54, 300, 16, player.hp / player.c.hp, HealthBarColor);
+        bar(hdc, 24, 76, 300, 10, player.energy / 100.f, UltimateEnergyColor);
+        bar(hdc, 24, 92, 300, 10, player.stamina / 100.f, StaminaBarColor);
+        text(hdc, L"\u751f\u547d", 332, 50, 13, RGB(235, 230, 215));
+        text(hdc, L"\u5927\u62db\u80fd\u91cf", 332, 70, 13, RGB(235, 230, 215));
+        text(hdc, L"\u4f53\u529b", 332, 86, 13, RGB(235, 230, 215));
         text(hdc, std::wstring(ai.c.name) + L" / " + ai.w.name, W - 324, 22, 18, RGB(240, 236, 220));
-        bar(hdc, W - 324, 54, 300, 16, ai.hp / ai.c.hp, RGB(180, 45, 50));
-        bar(hdc, W - 324, 76, 300, 10, ai.energy / 100.f, RGB(70, 145, 230));
-        bar(hdc, W - 324, 92, 300, 10, ai.stamina / 100.f, RGB(220, 180, 70));
+        bar(hdc, W - 324, 54, 300, 16, ai.hp / ai.c.hp, HealthBarColor);
+        bar(hdc, W - 324, 76, 300, 10, ai.energy / 100.f, UltimateEnergyColor);
+        bar(hdc, W - 324, 92, 300, 10, ai.stamina / 100.f, StaminaBarColor);
+        text(hdc, L"\u751f\u547d", W - 374, 50, 13, RGB(235, 230, 215));
+        text(hdc, L"\u5927\u62db\u80fd\u91cf", W - 430, 70, 13, RGB(235, 230, 215));
+        text(hdc, L"\u4f53\u529b", W - 374, 86, 13, RGB(235, 230, 215));
         text(hdc, std::to_wstring(static_cast<int>(std::ceil(std::max(0.f, timeLeft)))), 0, 26, 34, RGB(235, 230, 215), true);
         if (!practiceMode) {
             text(hdc, L"\u7b2c " + std::to_wstring(currentRound) + L" \u5c40", 0, 66, 20, RGB(232, 224, 205), true);
@@ -2598,6 +2640,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     }
     if (std::wstring(GetCommandLineW()).find(L"--self-test-round-intro") != std::wstring::npos) {
         return g.runRoundIntroSelfTest() ? 0 : 4;
+    }
+    if (std::wstring(GetCommandLineW()).find(L"--self-test-ultimate-energy") != std::wstring::npos) {
+        return g.runUltimateEnergySelfTest() ? 0 : 6;
     }
     if (std::wstring(GetCommandLineW()).find(L"--self-test-weapon-tuning") != std::wstring::npos) {
         return g.runWeaponTuningSelfTest() ? 0 : 5;
