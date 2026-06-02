@@ -28,6 +28,7 @@ constexpr float ArenaRight = 1192.f;
 constexpr float ArenaTop = 530.f;
 constexpr float ArenaBottom = 650.f;
 constexpr float QuickAttackThreshold = 0.18f;
+constexpr float RoundIntroDuration = 1.6f;
 
 struct Vec {
     float x = 0.f;
@@ -479,6 +480,7 @@ private:
     int playerRounds = 0;
     int aiRounds = 0;
     int currentRound = 1;
+    float roundIntroTimer = 0.f;
     std::wstring message;
     float messageTimer = 0.f;
     float hitStopTimer = 0.f;
@@ -890,6 +892,18 @@ private:
         koFeedbackPlayed = false;
     }
 
+    bool roundIntroActive() const {
+        return !practiceMode && !visualLabMode && roundIntroTimer > 0.f;
+    }
+
+    void startRoundIntro() {
+        roundIntroTimer = (!practiceMode && !visualLabMode) ? RoundIntroDuration : 0.f;
+        input = {};
+        aiInput = {};
+        mouseDown = false;
+        lastMouse = false;
+    }
+
     void resetMatchState() {
         playerRounds = 0;
         aiRounds = 0;
@@ -902,6 +916,7 @@ private:
     void startNewMatch() {
         resetMatchState();
         resetBattle();
+        startRoundIntro();
         screen = Screen::Battle;
         mouseDown = false;
         lastMouse = false;
@@ -914,6 +929,7 @@ private:
         }
         ++currentRound;
         resetBattle();
+        startRoundIntro();
         screen = Screen::Battle;
         mouseDown = false;
         lastMouse = false;
@@ -1059,6 +1075,14 @@ private:
         if (messageTimer > 0.f) messageTimer -= dt;
         if (screen != Screen::Battle) return;
         if (hitStopTimer > 0.f) return;
+        if (roundIntroActive()) {
+            roundIntroTimer = std::max(0.f, roundIntroTimer - dt);
+            input = {};
+            aiInput = {};
+            mouseDown = false;
+            lastMouse = false;
+            return;
+        }
         if (practiceMode) {
             timeLeft = 99.f;
         } else {
@@ -1137,6 +1161,7 @@ public:
         diffSel = 0;
         difficulty = Difficulty::Easy;
         startNewMatch();
+        roundIntroTimer = 0.f;
 
         ai.hp = 0.f;
         finishBattleIfOver();
@@ -1149,6 +1174,7 @@ public:
             currentRound == 1;
 
         continueAfterResult();
+        roundIntroTimer = 0.f;
         const bool secondRoundReady =
             screen == Screen::Battle &&
             !matchComplete &&
@@ -1167,6 +1193,7 @@ public:
             currentRound == 2;
 
         continueAfterResult();
+        roundIntroTimer = 0.f;
         const bool restarted =
             screen == Screen::Battle &&
             !matchComplete &&
@@ -1175,6 +1202,38 @@ public:
             currentRound == 1;
 
         return firstRound && secondRoundReady && matchWon && restarted;
+    }
+
+    bool runRoundIntroSelfTest() {
+        practiceMode = false;
+        visualLabMode = false;
+        charSel = 0;
+        weaponSel = 0;
+        difficulty = Difficulty::Easy;
+        startNewMatch();
+
+        const float startTime = timeLeft;
+        const float startX = player.p.x;
+        input.move = {1.f, 0.f};
+        update(0.5f);
+        const bool frozen =
+            screen == Screen::Battle &&
+            roundIntroActive() &&
+            timeLeft == startTime &&
+            absf(player.p.x - startX) < 0.01f;
+
+        update(RoundIntroDuration);
+        const bool released = !roundIntroActive();
+        update(0.25f);
+        const bool clockRuns = timeLeft < startTime;
+
+        practiceMode = true;
+        visualLabMode = false;
+        resetBattle();
+        startRoundIntro();
+        const bool practiceSkipsIntro = !roundIntroActive() && roundIntroTimer <= 0.f;
+
+        return frozen && released && clockRuns && practiceSkipsIntro;
     }
 
 private:
@@ -2219,6 +2278,11 @@ private:
             text(hdc, L"\u7b2c " + std::to_wstring(currentRound) + L" \u5c40", 0, 66, 20, RGB(232, 224, 205), true);
             text(hdc, std::to_wstring(playerRounds) + L" : " + std::to_wstring(aiRounds), 0, 92, 22, RGB(232, 224, 205), true);
         }
+        if (roundIntroActive()) {
+            const std::wstring intro = roundIntroTimer > RoundIntroDuration * 0.45f ? L"\u51c6\u5907" : L"FIGHT";
+            text(hdc, intro, 0, 142, 58, RGB(245, 238, 210), true);
+            return;
+        }
         if (messageTimer > 0.f) text(hdc, message, 0, 145, 48, RGB(245, 245, 235), true);
         drawBattleTips(hdc);
     }
@@ -2366,6 +2430,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     }
     if (std::wstring(GetCommandLineW()).find(L"--self-test-match-flow") != std::wstring::npos) {
         return g.runMatchFlowSelfTest() ? 0 : 3;
+    }
+    if (std::wstring(GetCommandLineW()).find(L"--self-test-round-intro") != std::wstring::npos) {
+        return g.runRoundIntroSelfTest() ? 0 : 4;
     }
 
     WNDCLASSW wc{};
