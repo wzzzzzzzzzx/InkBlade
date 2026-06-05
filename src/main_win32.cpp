@@ -22,16 +22,22 @@ namespace {
 
 constexpr int W = 1280;
 constexpr int H = 720;
-constexpr float BaseDamage = 100.f;
+constexpr float BaseDamage = 68.f;
 constexpr float ArenaLeft = 88.f;
 constexpr float ArenaRight = 1192.f;
 constexpr float ArenaTop = 530.f;
 constexpr float ArenaBottom = 650.f;
 constexpr float QuickAttackThreshold = 0.18f;
 constexpr float RoundIntroDuration = 1.6f;
+constexpr float PassiveEnergyRegen = 3.2f;
+constexpr float HitEnergyGain = 12.f;
+constexpr float TakenEnergyGain = 7.f;
+constexpr float DodgeStaminaCost = 34.f;
+constexpr float SkillStaminaCost = 24.f;
 const COLORREF HealthBarColor = RGB(180, 45, 50);
 const COLORREF UltimateEnergyColor = RGB(230, 185, 55);
 const COLORREF StaminaBarColor = RGB(70, 165, 210);
+const COLORREF HudLabelPanelColor = RGB(18, 24, 28);
 
 struct Vec {
     float x = 0.f;
@@ -93,9 +99,9 @@ struct WeaponActionTuning {
 };
 
 const std::array<Character, 3> Characters = {{
-    {L"凌霜", L"输出型剑客", 900.f, 1.15f, 260.f, 15.f, 1.25f, 1.f, RGB(115, 205, 255), L"被动：所有伤害 +15%", L"F：寒冰突刺，冲刺并减速", L"V：冰华乱舞，霸体连斩"},
-    {L"墨痕", L"控制型书生", 1000.f, 0.9f, 280.f, 15.f, 1.f, 1.f, RGB(165, 105, 230), L"被动：技能冷却 -20%", L"F：墨缚印，短暂定身", L"V：天罗墨网，大范围禁闪"},
-    {L"素心", L"回复型医者", 1100.f, 0.85f, 235.f, 22.f, 1.f, 1.5f, RGB(255, 145, 195), L"被动：受伤后回复本次伤害 5%", L"F：回春术，回复 20% 生命", L"V：济世莲华，持续回复并减伤"}
+    {L"凌霜", L"输出型剑客", 900.f, 1.15f, 260.f, 9.f, 1.25f, 1.f, RGB(115, 205, 255), L"被动：所有伤害 +15%", L"F：寒冰突刺，冲刺并减速", L"V：冰华乱舞，霸体连斩"},
+    {L"墨痕", L"控制型书生", 1000.f, 0.9f, 280.f, 9.f, 1.f, 1.f, RGB(165, 105, 230), L"被动：技能冷却 -20%", L"F：墨缚印，短暂定身", L"V：天罗墨网，大范围禁闪"},
+    {L"素心", L"回复型医者", 1100.f, 0.85f, 235.f, 12.f, 1.f, 1.5f, RGB(255, 145, 195), L"被动：受伤后回复本次伤害 5%", L"F：回春术，回复 20% 生命", L"V：济世莲华，持续回复并减伤"}
 }};
 
 const std::array<Weapon, 3> Weapons = {{
@@ -105,9 +111,9 @@ const std::array<Weapon, 3> Weapons = {{
 }};
 
 const std::array<WeaponActionTuning, 3> WeaponTunings = {{
-    {104.f, 0.20f, 0.03f, 7.f, {190.f, 270.f, 360.f}, {1.f, 1.2f, 1.5f}, {12.f, 18.f, 26.f}, 0.30f, 128.f, 0.28f},
-    {126.f, 0.27f, 0.05f, 12.f, {165.f, 220.f, 285.f}, {1.f, 1.25f, 1.55f}, {18.f, 26.f, 36.f}, 0.42f, 150.f, 0.34f},
-    {82.f, 0.14f, 0.02f, 5.f, {135.f, 185.f, 235.f}, {1.f, 1.15f, 1.35f}, {10.f, 15.f, 22.f}, 0.24f, 112.f, 0.22f}
+    {152.f, 0.20f, 0.03f, 9.f, {180.f, 245.f, 330.f}, {0.85f, 1.0f, 1.18f}, {16.f, 24.f, 34.f}, 0.30f, 136.f, 0.28f},
+    {172.f, 0.27f, 0.05f, 15.f, {160.f, 215.f, 275.f}, {0.85f, 1.05f, 1.25f}, {24.f, 34.f, 46.f}, 0.42f, 158.f, 0.34f},
+    {128.f, 0.14f, 0.02f, 7.f, {130.f, 175.f, 225.f}, {0.85f, 0.98f, 1.12f}, {14.f, 21.f, 30.f}, 0.24f, 120.f, 0.22f}
 }};
 
 enum class Screen { Main, Character, Weapon, Difficulty, Practice, Battle, Result };
@@ -1319,6 +1325,75 @@ public:
         return true;
     }
 
+    bool runCombatBalanceSelfTest() {
+        practiceMode = false;
+        visualLabMode = false;
+        charSel = 0;
+        weaponSel = 0;
+        difficulty = Difficulty::Easy;
+        screen = Screen::Battle;
+
+        resetBattle();
+        ai.p = {player.p.x + 145.f, player.p.y};
+        player.stamina = 100.f;
+        normal(player);
+        const float hpBeforeNormal = ai.hp;
+        resolve(player, ai);
+        const bool firstAttackConnects = ai.hp < hpBeforeNormal;
+
+        resetBattle();
+        ai.p = {player.p.x + 170.f, player.p.y};
+        player.stamina = 100.f;
+        player.action = Action::ChargeRelease;
+        player.actionTimer = 0.3f;
+        player.chargeTimer = 1.1f;
+        resolve(player, ai);
+        ai.hitTimer = 0.f;
+        ai.action = Action::Idle;
+        player.action = Action::ChargeRelease;
+        player.actionTimer = 0.3f;
+        player.chargeTimer = 1.1f;
+        resolve(player, ai);
+        const bool chargedHitsDoNotKill = ai.hp > 0.f;
+
+        resetBattle();
+        player.energy = 0.f;
+        Input emptyInput;
+        updateFighter(player, emptyInput, 30.f);
+        const bool energyRecoversInRound = player.energy >= 90.f;
+
+        resetBattle();
+        player.stamina = 100.f;
+        Input dodgeInput;
+        dodgeInput.dodge = true;
+        updateFighter(player, dodgeInput, 0.016f);
+        const bool firstDodgeCostsStamina = player.stamina <= 67.f;
+        player.action = Action::Idle;
+        player.dodgeLock = 0.f;
+        updateFighter(player, dodgeInput, 0.016f);
+        const bool secondDodgeCostsStamina = player.stamina <= 34.f;
+        player.action = Action::Idle;
+        player.dodgeLock = 0.f;
+        const float beforeRejectedDodge = player.stamina;
+        updateFighter(player, dodgeInput, 0.016f);
+        const bool thirdDodgeRejected = player.stamina >= beforeRejectedDodge;
+
+        resetBattle();
+        player.stamina = 100.f;
+        Input skillInput;
+        skillInput.skill = true;
+        updateFighter(player, skillInput, 0.016f);
+        const bool skillCostsStamina = player.action == Action::Skill && player.stamina <= 77.f;
+
+        return firstAttackConnects &&
+            chargedHitsDoNotKill &&
+            energyRecoversInRound &&
+            firstDodgeCostsStamina &&
+            secondDodgeCostsStamina &&
+            thirdDodgeRejected &&
+            skillCostsStamina;
+    }
+
     bool runWeaponTuningSelfTest() {
         charSel = 0;
         difficulty = Difficulty::Easy;
@@ -1393,7 +1468,7 @@ private:
             f.action = Action::Down;
             return;
         }
-        f.energy = clampf(f.energy + 2.f * dt, 0.f, 100.f);
+        f.energy = clampf(f.energy + PassiveEnergyRegen * dt, 0.f, 100.f);
         f.stamina = clampf(f.stamina + f.c.staminaRegen * dt, 0.f, 100.f);
         if (f.lotusTimer > 0.f && f.c.name == Characters[2].name) f.hp = clampf(f.hp + f.c.hp * 0.4f / 3.f * dt, 0.f, f.c.hp);
 
@@ -1416,18 +1491,18 @@ private:
             f.actionTimer = f.w.parryWindow;
             splash(f.p, RGB(245, 245, 235), 12);
             addEffect(EffectType::ParryGuard, f.p, RGB(245, 245, 235), 0.22f, 80.f, f.facing, 0);
-        } else if (in.dodge && freeToAct(f) && f.stamina >= 25.f && f.dodgeLock <= 0.f && f.bindTimer <= 0.f) {
+        } else if (in.dodge && freeToAct(f) && f.stamina >= DodgeStaminaCost && f.dodgeLock <= 0.f && f.bindTimer <= 0.f) {
             Vec d = len(in.move) < 0.1f ? Vec{static_cast<float>(-f.facing), 0.f} : in.move;
             addEffect(EffectType::DodgeTrail, f.p, f.c.color, 0.28f, 76.f, f.facing, 0);
             f.p.x += norm(d).x * 120.f;
             f.p.y += norm(d).y * 120.f;
-            f.stamina -= 25.f;
+            f.stamina -= DodgeStaminaCost;
             f.dodgeLock = 0.5f;
             f.action = Action::Dodge;
             f.actionTimer = 0.18f;
             f.dodges++;
             splash(f.p, RGB(235, 235, 225), 14);
-        } else if (in.skill && (freeToAct(f) || f.airborne) && f.cooldown <= 0.f) {
+        } else if (in.skill && (freeToAct(f) || f.airborne) && f.cooldown <= 0.f && f.stamina >= SkillStaminaCost) {
             skill(f);
         } else if (in.ultimate && (freeToAct(f) || f.airborne) && f.energy >= 100.f) {
             ultimate(f);
@@ -1496,6 +1571,7 @@ private:
     void skill(Fighter& f) {
         f.action = Action::Skill;
         f.actionTimer = 0.3f;
+        f.stamina = clampf(f.stamina - SkillStaminaCost, 0.f, 100.f);
         f.cooldown = f.c.name == Characters[1].name ? 4.8f : (f.c.name == Characters[0].name ? 8.f : 10.f);
         if (f.c.name == Characters[0].name) f.p.x += f.facing * 170.f;
         if (f.c.name == Characters[2].name) f.hp = clampf(f.hp + f.c.hp * 0.2f, 0.f, f.c.hp);
@@ -1560,8 +1636,8 @@ private:
         d.hp = clampf(d.hp - damage, 0.f, d.c.hp);
         const bool defeatedByThisHit = hpBeforeDamage > 0.f && d.hp <= 0.f;
         a.damageDone += damage;
-        a.energy = clampf(a.energy + 8.f * a.c.hitEnergy, 0.f, 100.f);
-        d.energy = clampf(d.energy + 5.f * d.c.takenEnergy, 0.f, 100.f);
+        a.energy = clampf(a.energy + HitEnergyGain * a.c.hitEnergy, 0.f, 100.f);
+        d.energy = clampf(d.energy + TakenEnergyGain * d.c.takenEnergy, 0.f, 100.f);
         if (!defeatedByThisHit && d.c.name == Characters[2].name) d.hp = clampf(d.hp + damage * 0.05f, 0.f, d.c.hp);
         d.hitTimer = 0.25f;
         d.action = Action::Hit;
@@ -2464,21 +2540,26 @@ private:
         rect(hdc, x, y, static_cast<int>(w * clampf(k, 0.f, 1.f)), h, c);
     }
 
+    void hudBarLabel(HDC hdc, const std::wstring& value, int x, int y, int w = 78) {
+        rect(hdc, x, y, w, 16, HudLabelPanelColor);
+        text(hdc, value, x + 6, y + 1, 13, RGB(250, 246, 226));
+    }
+
     void drawHud(HDC hdc) {
         text(hdc, std::wstring(player.c.name) + L" / " + player.w.name, 24, 22, 18, RGB(240, 236, 220));
         bar(hdc, 24, 54, 300, 16, player.hp / player.c.hp, HealthBarColor);
         bar(hdc, 24, 76, 300, 10, player.energy / 100.f, UltimateEnergyColor);
         bar(hdc, 24, 92, 300, 10, player.stamina / 100.f, StaminaBarColor);
-        text(hdc, L"\u751f\u547d", 332, 50, 13, RGB(235, 230, 215));
-        text(hdc, L"\u5927\u62db\u80fd\u91cf", 332, 70, 13, RGB(235, 230, 215));
-        text(hdc, L"\u4f53\u529b", 332, 86, 13, RGB(235, 230, 215));
+        hudBarLabel(hdc, L"\u751f\u547d", 30, 54, 46);
+        hudBarLabel(hdc, L"\u5927\u62db\u80fd\u91cf", 30, 72, 78);
+        hudBarLabel(hdc, L"\u7cbe\u529b", 30, 88, 46);
         text(hdc, std::wstring(ai.c.name) + L" / " + ai.w.name, W - 324, 22, 18, RGB(240, 236, 220));
         bar(hdc, W - 324, 54, 300, 16, ai.hp / ai.c.hp, HealthBarColor);
         bar(hdc, W - 324, 76, 300, 10, ai.energy / 100.f, UltimateEnergyColor);
         bar(hdc, W - 324, 92, 300, 10, ai.stamina / 100.f, StaminaBarColor);
-        text(hdc, L"\u751f\u547d", W - 374, 50, 13, RGB(235, 230, 215));
-        text(hdc, L"\u5927\u62db\u80fd\u91cf", W - 430, 70, 13, RGB(235, 230, 215));
-        text(hdc, L"\u4f53\u529b", W - 374, 86, 13, RGB(235, 230, 215));
+        hudBarLabel(hdc, L"\u751f\u547d", W - 318, 54, 46);
+        hudBarLabel(hdc, L"\u5927\u62db\u80fd\u91cf", W - 318, 72, 78);
+        hudBarLabel(hdc, L"\u7cbe\u529b", W - 318, 88, 46);
         text(hdc, std::to_wstring(static_cast<int>(std::ceil(std::max(0.f, timeLeft)))), 0, 26, 34, RGB(235, 230, 215), true);
         if (!practiceMode) {
             text(hdc, L"\u7b2c " + std::to_wstring(currentRound) + L" \u5c40", 0, 66, 20, RGB(232, 224, 205), true);
@@ -2643,6 +2724,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     }
     if (std::wstring(GetCommandLineW()).find(L"--self-test-ultimate-energy") != std::wstring::npos) {
         return g.runUltimateEnergySelfTest() ? 0 : 6;
+    }
+    if (std::wstring(GetCommandLineW()).find(L"--self-test-combat-balance") != std::wstring::npos) {
+        return g.runCombatBalanceSelfTest() ? 0 : 7;
     }
     if (std::wstring(GetCommandLineW()).find(L"--self-test-weapon-tuning") != std::wstring::npos) {
         return g.runWeaponTuningSelfTest() ? 0 : 5;

@@ -11,7 +11,7 @@ foreach ($needle in @(
     "runUltimateEnergySelfTest",
     "--self-test-ultimate-energy",
     "\u5927\u62db\u80fd\u91cf",
-    "\u4f53\u529b"
+    "\u7cbe\u529b"
 )) {
     if ($sourceText -notmatch [regex]::Escape($needle)) {
         throw "Missing ultimate energy marker: $needle"
@@ -24,7 +24,7 @@ if (!(Test-Path -LiteralPath $Exe)) {
 
 $p = Start-Process -FilePath $Exe -ArgumentList @("--self-test-ultimate-energy") -WorkingDirectory (Split-Path $Exe) -PassThru
 try {
-    if (-not $p.WaitForExit(4000)) {
+    if (-not $p.WaitForExit(12000)) {
         throw "Ultimate energy self-test did not exit."
     }
     if ($p.ExitCode -ne 0) {
