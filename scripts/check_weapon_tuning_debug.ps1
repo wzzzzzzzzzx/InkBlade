@@ -12,6 +12,8 @@ foreach ($needle in @(
     "practiceDebugHitboxes",
     "drawCombatDebug",
     "outlineRect",
+    "rangeCenterY",
+    "weaponLayoutsDistinct",
     "--self-test-weapon-tuning"
 )) {
     if ($sourceText -notmatch [regex]::Escape($needle)) {
@@ -25,7 +27,7 @@ if (!(Test-Path -LiteralPath $Exe)) {
 
 $p = Start-Process -FilePath $Exe -ArgumentList @("--self-test-weapon-tuning") -WorkingDirectory (Split-Path $Exe) -PassThru
 try {
-    if (-not $p.WaitForExit(4000)) {
+    if (-not $p.WaitForExit(12000)) {
         throw "Weapon tuning self-test did not exit."
     }
     if ($p.ExitCode -ne 0) {

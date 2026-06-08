@@ -20,7 +20,11 @@ foreach ($relative in $weaponModels) {
 foreach ($needle in @(
     "weaponModelSprites",
     "loadWeaponModelSprites",
+    "WeaponRenderLayout",
+    "WeaponRenderLayouts",
+    "weaponRenderLayout",
     "drawWeaponSprite",
+    "weaponDrawWidth",
     "model_01.png",
     "if (drawWeaponSprite"
 )) {

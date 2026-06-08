@@ -120,6 +120,26 @@ enum class Screen { Main, Character, Weapon, Difficulty, Practice, Battle, Resul
 enum class Action { Idle, Normal, Charging, ChargeRelease, Parry, Counter, Dodge, Skill, Ultimate, Hit, Down };
 enum class Difficulty { Easy, Normal, Hard };
 enum class VisualLabAction { Ultimate, ChargeRelease, Hit, Skill, Normal, Charging, Jump, Parry, Dodge };
+
+constexpr size_t ActionRenderCount = 11;
+
+struct WeaponRenderPose {
+    int width;
+    int minHeight;
+    int xOffset;
+    int yOffset;
+};
+
+struct WeaponRenderLayout {
+    std::array<WeaponRenderPose, ActionRenderCount> poses;
+};
+
+const std::array<WeaponRenderLayout, 3> WeaponRenderLayouts = {{
+    {{{{132, 24, 48, -2}, {160, 28, 76, -8}, {146, 28, 54, -10}, {166, 30, 78, -10}, {150, 28, 42, -8}, {150, 28, 52, -8}, {138, 28, 54, -6}, {168, 30, 72, -10}, {176, 32, 82, -12}, {118, 28, 38, 0}, {118, 28, 34, 6}}}},
+    {{{{158, 38, 56, 2}, {188, 44, 82, -14}, {174, 42, 62, -8}, {210, 48, 92, -18}, {184, 42, 54, -8}, {184, 42, 62, -8}, {166, 40, 66, -6}, {200, 46, 84, -14}, {220, 50, 92, -20}, {150, 38, 46, 2}, {150, 38, 46, 8}}}},
+    {{{{118, 74, 42, -2}, {138, 76, 68, -14}, {128, 74, 52, -8}, {150, 78, 70, -14}, {132, 74, 40, -6}, {132, 74, 46, -6}, {122, 74, 52, -8}, {150, 78, 70, -12}, {166, 82, 78, -16}, {110, 70, 40, 0}, {110, 70, 40, 6}}}}
+}};
+
 enum class ActionSpriteSlot {
     Idle,
     Run1,
@@ -1435,6 +1455,10 @@ public:
         const bool hidden = !showCombatDebug();
         practiceDebugHitboxes = true;
         const bool visible = showCombatDebug();
+        player.action = Action::Normal;
+        const bool weaponLayoutsDistinct =
+            weaponDrawWidth(player, 1) > weaponDrawWidth(player, 0) &&
+            weaponDrawWidth(player, 0) > weaponDrawWidth(player, 2);
 
         return
             swordNormal.active &&
@@ -1445,6 +1469,7 @@ public:
             swordCharge.charge &&
             swordCharge.range > broadswordCharge.range &&
             weaponTuning(ai).counterRange > 0.f &&
+            weaponLayoutsDistinct &&
             hidden &&
             visible;
     }
@@ -2305,30 +2330,32 @@ private:
         return drawBitmapAlpha(hdc, image, drawX, drawY, drawW, drawH, f.facing > 0, 220);
     }
 
+    const WeaponRenderLayout& weaponRenderLayout(int weapon) const {
+        return WeaponRenderLayouts[static_cast<size_t>(std::max(0, std::min(weapon, 2)))];
+    }
+
+    const WeaponRenderPose& weaponRenderPose(const Fighter& f, int weapon) const {
+        const size_t action = static_cast<size_t>(std::max(0, std::min(static_cast<int>(f.action), static_cast<int>(ActionRenderCount) - 1)));
+        return weaponRenderLayout(weapon).poses[action];
+    }
+
+    int weaponDrawWidth(const Fighter& f, int weapon) const {
+        return weaponRenderPose(f, weapon).width;
+    }
+
     bool drawWeaponSprite(HDC hdc, const Fighter& f, int x, int y, int weapon) {
         const BitmapImage& image = weaponModelSprites[static_cast<size_t>(std::max(0, std::min(weapon, 2)))];
         if (!image.bitmap || image.width <= 0 || image.height <= 0) return false;
         const int d = f.facing;
         const int handX = x + d * 22;
         const int handY = y - 55;
-        int drawW = 132;
-        int drawH = std::max(24, static_cast<int>(drawW * static_cast<float>(image.height) / static_cast<float>(image.width)));
-        int drawX = d > 0 ? handX - 18 : handX - drawW + 18;
-        int drawY = handY - drawH / 2 - 2;
-        BYTE alpha = f.action == Action::Hit ? 180 : 255;
-
-        if (weapon == 1) {
-            drawW = 152;
-            drawH = std::max(38, static_cast<int>(drawW * static_cast<float>(image.height) / static_cast<float>(image.width)));
-            drawX = d > 0 ? handX - 24 : handX - drawW + 24;
-            drawY = handY - drawH / 2 + 2;
-        } else if (weapon == 2) {
-            drawW = 118;
-            drawH = std::max(74, static_cast<int>(drawW * static_cast<float>(image.height) / static_cast<float>(image.width)));
-            drawX = handX - drawW / 2 + d * 42;
-            drawY = handY - drawH / 2 - 2;
-        }
-
+        const WeaponRenderPose& pose = weaponRenderPose(f, weapon);
+        const int drawW = pose.width;
+        const int drawH = std::max(pose.minHeight, static_cast<int>(drawW * static_cast<float>(image.height) / static_cast<float>(image.width)));
+        const int centerX = handX + d * pose.xOffset;
+        const int drawX = centerX - drawW / 2;
+        const int drawY = handY - drawH / 2 + pose.yOffset;
+        const BYTE alpha = f.action == Action::Hit || f.action == Action::Down ? 180 : 255;
         return drawBitmapAlpha(hdc, image, drawX, drawY, drawW, drawH, d < 0, alpha);
     }
 
@@ -2521,11 +2548,15 @@ private:
         const int range = static_cast<int>(profile.range);
         const int top = y - static_cast<int>(profile.verticalRange);
         const int height = static_cast<int>(profile.verticalRange * 2.f);
+        const int rangeCenterY = top + height / 2;
         if (f.facing > 0) {
             outlineRect(hdc, x - reachBack, top, range + reachBack, height, attackColor, profile.charge ? 4 : 3);
+            line(hdc, x, rangeCenterY, x + range, rangeCenterY, attackColor, 2);
         } else {
             outlineRect(hdc, x - range, top, range + reachBack, height, attackColor, profile.charge ? 4 : 3);
+            line(hdc, x, rangeCenterY, x - range, rangeCenterY, attackColor, 2);
         }
+        ellipse(hdc, x - 4, rangeCenterY - 4, 8, 8, attackColor, attackColor, 1);
     }
 
     void drawCombatDebug(HDC hdc) {
