@@ -106,8 +106,8 @@ const std::array<Character, 3> Characters = {{
 
 const std::array<Weapon, 3> Weapons = {{
     {L"长剑", L"均衡型", {1.f, 1.f, 1.5f}, {1.5f, 2.f, 3.f}, 0.17f, 1.2f},
-    {L"大刀", L"重型", {1.3f, 2.f}, {2.f, 2.8f, 4.f}, 0.13f, 2.f},
-    {L"双刃", L"速攻型", {0.6f, 0.6f, 0.8f, 0.8f, 1.2f}, {1.5f, 2.2f, 2.8f}, 0.2f, 0.8f}
+    {L"大刀", L"重型", {1.15f, 1.3f, 1.55f}, {2.f, 2.8f, 4.f}, 0.13f, 2.f},
+    {L"双刃", L"速攻型", {0.65f, 0.75f, 1.05f}, {1.5f, 2.2f, 2.8f}, 0.2f, 0.8f}
 }};
 
 const std::array<WeaponActionTuning, 3> WeaponTunings = {{
@@ -191,6 +191,12 @@ const std::array<const wchar_t*, 3> WeaponModelFolder = {{
     L"weapons\\dualblades\\sprites\\model\\"
 }};
 
+const std::array<const wchar_t*, 3> WeaponAttackFolder = {{
+    L"longsword\\",
+    L"broadsword\\",
+    L"dualblades\\"
+}};
+
 struct Input {
     bool attackPress = false;
     bool attackRelease = false;
@@ -269,6 +275,7 @@ struct Fighter {
     float z = 0.f;
     float vz = 0.f;
     int comboIndex = 0;
+    int normalStage = 0;
     bool airborne = false;
     Action action = Action::Idle;
     float damageDone = 0.f;
@@ -312,6 +319,13 @@ public:
         for (auto& image : weaponModelSprites) {
             image.destroy();
         }
+        for (auto& character : weaponComboSprites) {
+            for (auto& weapon : character) {
+                for (auto& stage : weapon) {
+                    stage.destroy();
+                }
+            }
+        }
         menuBackground.destroy();
         battleBackground.destroy();
         battleGround.destroy();
@@ -329,6 +343,8 @@ public:
         initGraphics();
         visualLabMode = commandLineHas(L"--visual-lab");
         visualLabCharacter = commandLineInt(L"--visual-lab-character", 0, 0, 2);
+        visualLabWeapon = commandLineInt(L"--visual-lab-weapon", 0, 0, 2);
+        visualLabNormalStage = commandLineInt(L"--visual-lab-normal-stage", 0, 0, 2);
         if (visualLabMode) {
             startVisualLab();
         } else {
@@ -532,6 +548,8 @@ private:
     bool practiceMode = false;
     bool visualLabMode = false;
     int visualLabCharacter = 0;
+    int visualLabWeapon = 0;
+    int visualLabNormalStage = 0;
     bool practiceEnemyAttacks = false;
     bool practiceFullEnergy = true;
     bool practiceEnemyFullEnergy = false;
@@ -562,6 +580,7 @@ private:
     std::array<BitmapImage, 3> weaponModelSprites;
     std::array<std::array<BitmapImage, static_cast<size_t>(ActionSpriteSlot::Count)>, 3> characterSprites;
     std::array<BitmapImage, 3> characterUltimateVfx;
+    std::array<std::array<std::array<BitmapImage, 3>, 3>, 3> weaponComboSprites;
 
     HBRUSH brush(COLORREF color) {
         return CreateSolidBrush(color);
@@ -577,6 +596,13 @@ private:
 
     BitmapImage& weaponModelSprite(int weapon) {
         return weaponModelSprites[static_cast<size_t>(std::max(0, std::min(weapon, 2)))];
+    }
+
+    BitmapImage& weaponComboSprite(int role, int weapon, int stage) {
+        return weaponComboSprites
+            [static_cast<size_t>(std::max(0, std::min(role, 2)))]
+            [static_cast<size_t>(std::max(0, std::min(weapon, 2)))]
+            [static_cast<size_t>(std::max(0, std::min(stage, 2)))];
     }
 
     ActionSpriteLayout spriteLayoutFor(ActionSpriteSlot slot) const {
@@ -678,6 +704,7 @@ private:
         loadSelectBackgrounds();
         loadAllCharacterActionSprites();
         loadWeaponModelSprites();
+        loadWeaponComboSprites();
     }
 
     std::wstring exeDir() const {
@@ -723,6 +750,23 @@ private:
         const std::wstring root = exeDir() + L"\\assets\\art\\";
         for (int weapon = 0; weapon < static_cast<int>(WeaponModelFolder.size()); ++weapon) {
             loadPng(root + WeaponModelFolder[static_cast<size_t>(weapon)] + L"model_01.png", weaponModelSprite(weapon));
+        }
+    }
+
+    void loadWeaponComboSprites() {
+        const std::wstring root = exeDir() + L"\\assets\\art\\";
+        for (int role = 0; role < static_cast<int>(CharacterSpriteFolder.size()); ++role) {
+            const std::wstring characterRoot =
+                root + CharacterSpriteFolder[static_cast<size_t>(role)] + L"..\\attack\\";
+            for (int weapon = 0; weapon < static_cast<int>(WeaponAttackFolder.size()); ++weapon) {
+                const std::wstring weaponRoot =
+                    characterRoot + WeaponAttackFolder[static_cast<size_t>(weapon)];
+                for (int stage = 0; stage < 3; ++stage) {
+                    const std::wstring fileName =
+                        L"normal_0" + std::to_wstring(stage + 1) + L".png";
+                    loadPng(weaponRoot + fileName, weaponComboSprite(role, weapon, stage));
+                }
+            }
         }
     }
 
@@ -1018,7 +1062,7 @@ private:
         practiceFullEnergy = true;
         practiceEnemyFullEnergy = true;
         charSel = visualLabCharacter;
-        weaponSel = 0;
+        weaponSel = visualLabWeapon;
         diffSel = 0;
         difficulty = Difficulty::Easy;
         resetBattle();
@@ -1049,6 +1093,8 @@ private:
         ai.hitTimer = 0.f;
         player.chargeTimer = 0.f;
         ai.chargeTimer = 0.f;
+        player.normalStage = 0;
+        ai.normalStage = 0;
         aiInput = {};
         input = {};
         mouseDown = false;
@@ -1085,8 +1131,11 @@ private:
         } else if (action == VisualLabAction::Normal) {
             player.action = Action::Normal;
             player.actionTimer = 0.38f;
+            player.normalStage = visualLabNormalStage;
             splash({player.p.x + player.facing * 55.f, player.p.y - 40.f}, player.c.color, 10);
-            addEffect(EffectType::Slash, {player.p.x + player.facing * 72.f, player.p.y - 56.f}, player.c.color, 0.34f, 86.f, player.facing, weaponIndex(player), characterIndex(player));
+            if (!weaponComboSprite(characterIndex(player), weaponIndex(player), player.normalStage).bitmap) {
+                addEffect(EffectType::Slash, {player.p.x + player.facing * 72.f, player.p.y - 56.f}, player.c.color, 0.34f, 86.f, player.facing, weaponIndex(player), characterIndex(player));
+            }
             message = L"\u5e73A\u6d4b\u8bd5";
             messageTimer = 0.8f;
         } else if (action == VisualLabAction::Charging) {
@@ -1420,23 +1469,65 @@ public:
         practiceMode = true;
         visualLabMode = false;
         screen = Screen::Battle;
+        bool allWeaponsUseThreeStageLoop = true;
+
+        for (int weapon = 0; weapon < static_cast<int>(Weapons.size()); ++weapon) {
+            weaponSel = weapon;
+            resetBattle();
+            player.stamina = 100.f;
+            for (int expectedStage = 0; expectedStage < 3; ++expectedStage) {
+                normal(player);
+                allWeaponsUseThreeStageLoop =
+                    allWeaponsUseThreeStageLoop &&
+                    player.normalStage == expectedStage &&
+                    player.comboIndex == (expectedStage + 1) % 3;
+                player.action = Action::Idle;
+            }
+            normal(player);
+            allWeaponsUseThreeStageLoop =
+                allWeaponsUseThreeStageLoop &&
+                player.normalStage == 0 &&
+                player.comboIndex == 1;
+        }
+
+        weaponSel = 0;
+        resetBattle();
+        player.stamina = 100.f;
+        normal(player);
+        player.action = Action::Idle;
+        Input followUpInput;
+        followUpInput.attackPress = true;
+        updateFighter(player, followUpInput, 0.016f);
+        const bool idleWindowContinuesCombo =
+            player.action == Action::Normal &&
+            player.normalStage == 1 &&
+            player.comboIndex == 2;
+
+        resetBattle();
+        player.stamina = 100.f;
+        normal(player);
+        Input noInput;
+        updateFighter(player, noInput, 0.4f);
+        const bool expiredWindowResetsCombo =
+            player.comboTimer <= 0.f &&
+            player.comboIndex == 0;
 
         weaponSel = 0;
         resetBattle();
         player.action = Action::Normal;
-        player.comboIndex = 1;
+        player.normalStage = 0;
         const AttackProfile swordNormal = attackProfile(player);
 
         weaponSel = 1;
         resetBattle();
         player.action = Action::Normal;
-        player.comboIndex = 1;
+        player.normalStage = 0;
         const AttackProfile broadswordNormal = attackProfile(player);
 
         weaponSel = 2;
         resetBattle();
         player.action = Action::Normal;
-        player.comboIndex = 1;
+        player.normalStage = 0;
         const AttackProfile dualNormal = attackProfile(player);
 
         weaponSel = 0;
@@ -1470,6 +1561,9 @@ public:
             swordCharge.range > broadswordCharge.range &&
             weaponTuning(ai).counterRange > 0.f &&
             weaponLayoutsDistinct &&
+            allWeaponsUseThreeStageLoop &&
+            idleWindowContinuesCombo &&
+            expiredWindowResetsCombo &&
             hidden &&
             visible;
     }
@@ -1484,6 +1578,9 @@ private:
         f.actionTimer = std::max(0.f, f.actionTimer - dt);
         f.hitTimer = std::max(0.f, f.hitTimer - dt);
         f.comboTimer = std::max(0.f, f.comboTimer - dt);
+        if (f.comboTimer <= 0.f) {
+            f.comboIndex = 0;
+        }
         f.dodgeLock = std::max(0.f, f.dodgeLock - dt);
         f.bindTimer = std::max(0.f, f.bindTimer - dt);
         f.slowTimer = std::max(0.f, f.slowTimer - dt);
@@ -1531,6 +1628,12 @@ private:
             skill(f);
         } else if (in.ultimate && (freeToAct(f) || f.airborne) && f.energy >= 100.f) {
             ultimate(f);
+        } else if (
+            in.attackPress &&
+            f.comboTimer > 0.f &&
+            (f.action == Action::Normal || freeToAct(f))
+        ) {
+            normal(f);
         } else if (in.attackPress && freeToAct(f)) {
             f.action = Action::Charging;
             f.chargeTimer = 0.f;
@@ -1555,8 +1658,6 @@ private:
                 splash({f.p.x + f.facing * 55.f, f.p.y - 30.f}, RGB(15, 15, 15), 18);
                 addEffect(EffectType::ChargeRelease, {f.p.x + f.facing * 75.f, f.p.y - 45.f}, f.c.color, 0.36f, 115.f + 30.f * lvl, f.facing, lvl, characterIndex(f));
             }
-        } else if (in.attackPress && f.comboTimer > 0.f) {
-            normal(f);
         }
 
         if (freeToAct(f) && f.bindTimer <= 0.f) {
@@ -1583,14 +1684,17 @@ private:
             return;
         }
         f.stamina -= tuning.normalStaminaCost;
+        f.normalStage = f.comboIndex % 3;
         f.action = Action::Normal;
-        f.actionTimer = tuning.normalTimerBase + tuning.normalTimerStep * f.comboIndex;
+        f.actionTimer = tuning.normalTimerBase + tuning.normalTimerStep * f.normalStage;
         f.comboTimer = 0.32f;
-        f.comboIndex = (f.comboIndex + 1) % static_cast<int>(f.w.combo.size());
-        f.maxCombo = std::max(f.maxCombo, f.comboIndex + 1);
+        f.comboIndex = (f.normalStage + 1) % 3;
+        f.maxCombo = std::max(f.maxCombo, f.normalStage + 1);
         splash({f.p.x + f.facing * 55.f, f.p.y - 40.f}, f.c.color, 10);
-        const int level = f.w.name == Weapons[1].name ? 2 : (f.w.name == Weapons[2].name ? 1 : 0);
-        addEffect(EffectType::Slash, {f.p.x + f.facing * 72.f, f.p.y - 56.f}, f.c.color, 0.24f, 86.f, f.facing, level, characterIndex(f));
+        if (!weaponComboSprite(characterIndex(f), weaponIndex(f), f.normalStage).bitmap) {
+            const int level = f.w.name == Weapons[1].name ? 2 : (f.w.name == Weapons[2].name ? 1 : 0);
+            addEffect(EffectType::Slash, {f.p.x + f.facing * 72.f, f.p.y - 56.f}, f.c.color, 0.24f, 86.f, f.facing, level, characterIndex(f));
+        }
     }
 
     void skill(Fighter& f) {
@@ -1789,10 +1893,9 @@ private:
         AttackProfile profile;
         const WeaponActionTuning& tuning = weaponTuning(f);
         if (f.action == Action::Normal) {
-            const int idx = (f.comboIndex - 1 + static_cast<int>(f.w.combo.size())) % static_cast<int>(f.w.combo.size());
             profile.active = true;
             profile.range = tuning.normalRange;
-            profile.multiplier = f.w.combo[static_cast<size_t>(idx)];
+            profile.multiplier = f.w.combo[static_cast<size_t>(std::max(0, std::min(f.normalStage, 2)))];
         } else if (f.action == Action::ChargeRelease) {
             const int lvl = chargeLevel(f.chargeTimer);
             profile.active = true;
@@ -2392,6 +2495,24 @@ private:
         }
     }
 
+    bool drawWeaponComboSprite(HDC hdc, const Fighter& f, int x, int y) {
+        if (f.action != Action::Normal) return false;
+        const int role = characterIndex(f);
+        const int weapon = weaponIndex(f);
+        const int stage = std::max(0, std::min(f.normalStage, 2));
+        const BitmapImage& image =
+            weaponComboSprites[static_cast<size_t>(role)][static_cast<size_t>(weapon)][static_cast<size_t>(stage)];
+        if (!image.bitmap || image.width <= 0 || image.height <= 0) return false;
+
+        const int drawH = 330;
+        const int drawW = std::max(240, std::min(
+            330,
+            static_cast<int>(drawH * static_cast<float>(image.width) / static_cast<float>(image.height))));
+        const int drawX = x - drawW / 2 + f.facing * 16;
+        const int drawY = y - drawH + 18;
+        return drawBitmapAlpha(hdc, image, drawX, drawY, drawW, drawH, f.facing < 0);
+    }
+
     void drawHitFlash(HDC hdc, const Fighter& f, int x, int y) {
         if (f.flashTimer <= 0.f) return;
         const int pulse = static_cast<int>(f.flashTimer * 35.f);
@@ -2414,6 +2535,11 @@ private:
         const COLORREF hitBody = f.action == Action::Hit ? RGB(245, 245, 245) : f.c.color;
         ellipse(hdc, x - 48, static_cast<int>(f.p.y) + 20, 96, 24, RGB(10, 10, 10), RGB(10, 10, 10));
         drawUltimateVfxSprite(hdc, f, x, y);
+        const bool drewWeaponCombo = drawWeaponComboSprite(hdc, f, x, y);
+        if (drewWeaponCombo) {
+            drawHitFlash(hdc, f, x, y);
+            return;
+        }
         if ((
                 f.action == Action::Idle ||
                 f.action == Action::Normal ||
