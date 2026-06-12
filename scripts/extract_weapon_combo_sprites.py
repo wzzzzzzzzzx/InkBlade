@@ -4,6 +4,8 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
+import cv2
+import numpy as np
 from PIL import Image, ImageDraw
 
 
@@ -80,6 +82,84 @@ def connected_background_mask(image: Image.Image) -> bytearray:
     return mask
 
 
+def grabcut_foreground_mask(image: Image.Image) -> np.ndarray:
+    rgb = np.asarray(image.convert("RGB"))
+    height, width, _ = rgb.shape
+    maximum = rgb.max(axis=2)
+    minimum = rgb.min(axis=2)
+    average = rgb.mean(axis=2)
+    saturation = maximum - minimum
+
+    mask = np.full((height, width), cv2.GC_PR_FGD, dtype=np.uint8)
+
+    definite_white = (average >= 247) & (saturation <= 9)
+    connected_white = np.asarray(
+        connected_background_mask(
+            Image.fromarray(
+                np.dstack(
+                    (
+                        np.where(definite_white, 255, 0),
+                        np.where(definite_white, 255, 0),
+                        np.where(definite_white, 255, 0),
+                        np.full((height, width), 255),
+                    )
+                ).astype(np.uint8),
+                mode="RGBA",
+            )
+        ),
+        dtype=np.uint8,
+    ).reshape((height, width)).astype(bool)
+    mask[connected_white] = cv2.GC_BGD
+
+    probable_white = (average >= 231) & (saturation <= 18)
+    mask[probable_white & ~connected_white] = cv2.GC_PR_BGD
+
+    line_art = (average <= 202) | (saturation >= 30)
+    line_art = cv2.morphologyEx(
+        line_art.astype(np.uint8),
+        cv2.MORPH_CLOSE,
+        np.ones((3, 3), dtype=np.uint8),
+        iterations=1,
+    ).astype(bool)
+    mask[line_art] = cv2.GC_FGD
+
+    mask[: max(4, int(height * 0.08)), :] = cv2.GC_BGD
+    mask[:, :3] = cv2.GC_BGD
+    mask[:, -3:] = cv2.GC_BGD
+    mask[-3:, :] = cv2.GC_BGD
+
+    background_model = np.zeros((1, 65), np.float64)
+    foreground_model = np.zeros((1, 65), np.float64)
+    cv2.grabCut(
+        cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR),
+        mask,
+        None,
+        background_model,
+        foreground_model,
+        8,
+        cv2.GC_INIT_WITH_MASK,
+    )
+    return np.isin(mask, (cv2.GC_FGD, cv2.GC_PR_FGD))
+
+
+def remove_background_with_grabcut(image: Image.Image) -> Image.Image:
+    rgba = image.convert("RGBA")
+    foreground = grabcut_foreground_mask(rgba)
+    binary = foreground.astype(np.uint8) * 255
+    closed = cv2.morphologyEx(
+        binary,
+        cv2.MORPH_CLOSE,
+        np.ones((3, 3), dtype=np.uint8),
+        iterations=1,
+    )
+    distance_inside = cv2.distanceTransform(closed, cv2.DIST_L2, 3)
+    distance_outside = cv2.distanceTransform(255 - closed, cv2.DIST_L2, 3)
+    signed_distance = distance_inside - distance_outside
+    alpha = np.clip((signed_distance + 1.25) * 102, 0, 255).astype(np.uint8)
+    rgba.putalpha(Image.fromarray(alpha, mode="L"))
+    return rgba
+
+
 def remove_connected_light_background(image: Image.Image) -> Image.Image:
     rgba = image.convert("RGBA")
     width, height = rgba.size
@@ -123,30 +203,33 @@ def remove_connected_light_background(image: Image.Image) -> Image.Image:
     return rgba
 
 
-def remove_enclosed_light_background(image: Image.Image) -> Image.Image:
+def remove_enclosed_light_background(image: Image.Image, character: str) -> Image.Image:
     rgba = image.convert("RGBA")
     pixels = rgba.load()
     width, height = rgba.size
-    strict = bytearray(width * height)
-    permissive = bytearray(width * height)
-
-    for y in range(height):
-        for x in range(width):
-            r, g, b, a = pixels[x, y]
-            if a < 16:
-                continue
-            average = (r + g + b) / 3
-            saturation = max(r, g, b) - min(r, g, b)
-            index = y * width + x
-            strict[index] = average >= 238 and saturation <= 18
-            permissive[index] = average >= 202 and saturation <= 58
-
     seen = bytearray(width * height)
-    seeds: list[tuple[int, int]] = []
+    remove: list[tuple[int, int]] = []
+    if character == "mohen":
+        minimum_average = 214
+        maximum_saturation = 32
+        minimum_component_size = 300
+    else:
+        minimum_average = 235
+        maximum_saturation = 15
+        minimum_component_size = 500
+
+    def enclosed_background(x: int, y: int) -> bool:
+        r, g, b, a = pixels[x, y]
+        if a < 16:
+            return False
+        average = (r + g + b) / 3
+        saturation = max(r, g, b) - min(r, g, b)
+        return average >= minimum_average and saturation <= maximum_saturation
+
     for y in range(height):
         for x in range(width):
             index = y * width + x
-            if seen[index] or not strict[index]:
+            if seen[index] or not enclosed_background(x, y):
                 continue
             queue = deque([(x, y)])
             seen[index] = 1
@@ -163,52 +246,17 @@ def remove_enclosed_light_background(image: Image.Image) -> Image.Image:
                     if not (0 <= nx < width and 0 <= ny < height):
                         continue
                     neighbor = ny * width + nx
-                    if seen[neighbor] or not strict[neighbor]:
+                    if seen[neighbor] or not enclosed_background(nx, ny):
                         continue
                     seen[neighbor] = 1
                     queue.append((nx, ny))
 
-            if len(component) < 650:
-                continue
-            xs = [point[0] for point in component]
-            ys = [point[1] for point in component]
-            component_width = max(xs) - min(xs) + 1
-            component_height = max(ys) - min(ys) + 1
-            fill_ratio = len(component) / (component_width * component_height)
-            if component_width >= 28 and component_height >= 20 and fill_ratio >= 0.16:
-                seeds.extend(component)
+            if len(component) >= minimum_component_size:
+                remove.extend(component)
 
-    remove = bytearray(width * height)
-    queue = deque(seeds)
-    for x, y in seeds:
-        remove[y * width + x] = 1
-
-    while queue:
-        x, y = queue.popleft()
-        for nx, ny in (
-            (x - 1, y),
-            (x + 1, y),
-            (x, y - 1),
-            (x, y + 1),
-            (x - 1, y - 1),
-            (x + 1, y - 1),
-            (x - 1, y + 1),
-            (x + 1, y + 1),
-        ):
-            if not (0 <= nx < width and 0 <= ny < height):
-                continue
-            index = ny * width + nx
-            if remove[index] or not permissive[index]:
-                continue
-            remove[index] = 1
-            queue.append((nx, ny))
-
-    for y in range(height):
-        for x in range(width):
-            if not remove[y * width + x]:
-                continue
-            r, g, b, _ = pixels[x, y]
-            pixels[x, y] = (r, g, b, 0)
+    for x, y in remove:
+        r, g, b, _ = pixels[x, y]
+        pixels[x, y] = (r, g, b, 0)
     return rgba
 
 
@@ -260,56 +308,34 @@ def remove_panel_lines(image: Image.Image) -> Image.Image:
 
 def remove_floor_plate(image: Image.Image) -> Image.Image:
     rgba = image.convert("RGBA")
-    pixels = rgba.load()
-    width, height = rgba.size
-    first_row = int(height * 0.68)
-    seen: set[tuple[int, int]] = set()
-    remove: list[tuple[int, int]] = []
-
-    def neutral(x: int, y: int) -> bool:
-        r, g, b, a = pixels[x, y]
-        if a < 12:
-            return False
-        saturation = max(r, g, b) - min(r, g, b)
-        return saturation <= 28
-
-    for y in range(first_row, height):
-        for x in range(width):
-            if (x, y) in seen or not neutral(x, y):
-                continue
-            queue = deque([(x, y)])
-            seen.add((x, y))
-            component: list[tuple[int, int]] = []
-            while queue:
-                cx, cy = queue.popleft()
-                component.append((cx, cy))
-                for nx, ny in ((cx - 1, cy), (cx + 1, cy), (cx, cy - 1), (cx, cy + 1)):
-                    if not (0 <= nx < width and first_row <= ny < height):
-                        continue
-                    if (nx, ny) in seen or not neutral(nx, ny):
-                        continue
-                    seen.add((nx, ny))
-                    queue.append((nx, ny))
-
-            xs = [point[0] for point in component]
-            ys = [point[1] for point in component]
-            component_width = max(xs) - min(xs) + 1
-            component_height = max(ys) - min(ys) + 1
-            floor_plate = (
-                min(ys) >= height * 0.75
-                and component_width >= width * 0.14
-                and component_height <= height * 0.24
-            )
-            if floor_plate:
-                remove.extend(component)
-
-    for x, y in remove:
-        r, g, b, _ = pixels[x, y]
-        pixels[x, y] = (r, g, b, 0)
-    return rgba
+    array = np.asarray(rgba).copy()
+    height, width, _ = array.shape
+    rgb = array[:, :, :3].astype(np.int16)
+    average = rgb.mean(axis=2)
+    saturation = rgb.max(axis=2) - rgb.min(axis=2)
+    rows = np.indices((height, width))[0]
+    light_neutral = (
+        (array[:, :, 3] >= 16)
+        & (average >= 205)
+        & (saturation <= 32)
+        & (rows >= int(height * 0.82))
+    )
+    horizontal_length = max(35, int(width * 0.08))
+    floor_lines = cv2.morphologyEx(
+        light_neutral.astype(np.uint8),
+        cv2.MORPH_OPEN,
+        np.ones((1, horizontal_length), dtype=np.uint8),
+    )
+    floor_lines = cv2.dilate(
+        floor_lines,
+        np.ones((3, 5), dtype=np.uint8),
+        iterations=1,
+    ).astype(bool)
+    array[:, :, 3][floor_lines & light_neutral] = 0
+    return Image.fromarray(array, mode="RGBA")
 
 
-def clear_canvas_border(image: Image.Image, border: int = 4) -> Image.Image:
+def clear_canvas_border(image: Image.Image, border: int = 12) -> Image.Image:
     rgba = image.convert("RGBA")
     pixels = rgba.load()
     width, height = rgba.size
@@ -353,8 +379,7 @@ def extract_sheet(job: ComboSheet) -> list[Path]:
     outputs: list[Path] = []
     expected_size: tuple[int, int] | None = None
     for stage in range(3):
-        sprite = remove_connected_light_background(panel_crop(sheet, stage))
-        sprite = remove_enclosed_light_background(sprite)
+        sprite = remove_background_with_grabcut(panel_crop(sheet, stage))
         sprite = remove_panel_lines(sprite)
         sprite = remove_floor_plate(sprite)
         sprite = clear_canvas_border(sprite)
